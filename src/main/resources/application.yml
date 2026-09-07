@@ -1,0 +1,104 @@
+spring:
+  application:
+    name: ${SPRING_APPLICATION_NAME:cameia-gateway}
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+
+  # SimpleDiscoveryClientAutoConfiguration referencia ServerProperties que se movió en SB 4.1.1.
+  # El gateway usa URLs directas (env vars), no service discovery ni load balancing.
+  autoconfigure:
+    exclude:
+      - org.springframework.cloud.client.discovery.simple.SimpleDiscoveryClientAutoConfiguration
+      - org.springframework.cloud.client.discovery.composite.CompositeDiscoveryClientAutoConfiguration
+      - org.springframework.cloud.loadbalancer.config.LoadBalancerAutoConfiguration
+      - org.springframework.cloud.loadbalancer.config.BlockingLoadBalancerClientAutoConfiguration
+
+  cloud:
+    discovery:
+      enabled: false
+    loadbalancer:
+      enabled: false
+
+    gateway:
+      server:
+        webflux:
+          # ── Rutas ─────────────────────────────────────────────────────────
+          routes:
+            # Sprint 1 — activas
+            - id: cameia-cuentas-users
+              uri: ${CAMEIA_CUENTAS_URL}
+              predicates:
+                - Path=/api/v1/users/**
+
+            - id: cameia-perfil
+              uri: ${CAMEIA_PERFIL_URL}
+              predicates:
+                - Path=/api/v1/profiles/**
+
+            - id: cameia-entrevista
+              uri: ${CAMEIA_ENTREVISTA_URL}
+              predicates:
+                - Path=/api/v1/interviews/**
+
+            # Ruta pública — declarada en Sprint 1, operativa en Sprint 3 (C3 Cuentas)
+            - id: wompi-webhook
+              uri: ${CAMEIA_CUENTAS_URL}
+              predicates:
+                - Path=/webhooks/wompi
+                - Method=POST
+
+            # Sprint 2/3 — declaradas; 503 hasta que el servicio exista
+            - id: cameia-voz
+              uri: ${CAMEIA_VOZ_URL:http://cameia-voz:8080}
+              predicates:
+                - Path=/api/v1/voice-service/**
+
+            - id: cameia-auditoria
+              uri: ${CAMEIA_AUDITORIA_URL:http://cameia-auditoria:8080}
+              predicates:
+                - Path=/api/v1/audit/**
+
+          # ── CORS global ──────────────────────────────────────────────────
+          globalcors:
+            cors-configurations:
+              '[/**]':
+                allowedOrigins:
+                  - ${GATEWAY_CORS_ALLOWED_ORIGIN:http://localhost:5173}
+                allowedMethods:
+                  - GET
+                  - POST
+                  - PUT
+                  - PATCH
+                  - DELETE
+                  - OPTIONS
+                allowedHeaders:
+                  - Authorization
+                  - Content-Type
+                  - X-User-Id
+                  - X-User-Plan
+                allowCredentials: true
+                maxAge: 3600
+
+          # ── Timeout HTTP hacia downstream (REQ-NF-02) ────────────────────
+          httpclient:
+            response-timeout: ${GATEWAY_TIMEOUT_MS:30000}ms
+
+server:
+  port: ${SERVER_PORT:8080}
+
+# ── Actuator ──────────────────────────────────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: ${MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE:health,info}
+  endpoint:
+    health:
+      show-details: never
+
+# ── Logging ───────────────────────────────────────────────────────────────
+logging:
+  level:
+    root: ${LOG_LEVEL:INFO}
+    co.edu.unicauca.cameia.gateway: DEBUG
+    org.springframework.cloud.gateway: INFO
