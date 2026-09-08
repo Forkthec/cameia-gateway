@@ -1,6 +1,71 @@
+# Entorno de desarrollo local de cameia-gateway.
+#
+# Objetivo: que quien clone el repositorio solo necesite Docker. Ni Java, ni Maven instalados.
+#
+#   docker compose up --build -d       -> gateway corriendo en http://localhost:8080
+#   docker compose run --rm verify     -> compila y ejecuta toda la suite de pruebas
+#   docker compose down                -> detiene los contenedores
+#
+# Prerequisito: la red compartida debe existir antes de hacer 'up':
+#   docker network create cameia-net
+#
+# Ver docs/DOCKER-LOCAL.md para instrucciones completas de arranque junto a cameia-perfil.
+
+name: cameia-gateway
+
 services:
-  # Ejecuta 'mvn verify' dentro de un contenedor Maven.
-  # Uso: docker compose run --rm verify
+
+  # ---------------------------------------------------------------------------
+  # El gateway. Punto de entrada HTTP de toda la plataforma.
+  # Puerto 8080 en la máquina anfitriona.
+  # ---------------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cameia-gateway:local
+    container_name: cameia-gateway-app
+    environment:
+      SPRING_APPLICATION_NAME: cameia-gateway
+      SPRING_PROFILES_ACTIVE: local
+      SERVER_PORT: 8080
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID}
+      # La clave se monta como volumen de solo lectura; nunca se copia a la imagen ni al repo.
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/firebase-key
+      # Nombre de contenedor de perfil dentro de cameia-net — no configurable por entorno.
+      CAMEIA_PERFIL_URL: http://cameia-perfil-app:8082
+      # Los demás downstream aún no tienen servicio app; se resuelven cuando existan.
+      CAMEIA_CUENTAS_URL: ${CAMEIA_CUENTAS_URL:-http://cameia-cuentas-app:8081}
+      CAMEIA_ENTREVISTA_URL: ${CAMEIA_ENTREVISTA_URL:-http://cameia-entrevista-app:8083}
+      GATEWAY_CORS_ALLOWED_ORIGIN: ${GATEWAY_CORS_ALLOWED_ORIGIN:-http://localhost:5173}
+      GATEWAY_TIMEOUT_MS: ${GATEWAY_TIMEOUT_MS:-30000}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info
+    volumes:
+      # FIREBASE_KEY_PATH debe apuntar al JSON de service account descargado de Firebase Console.
+      # Ejemplo: FIREBASE_KEY_PATH=/Users/tu-usuario/secretos/cameia-firebase.json
+      # El fallback /dev/null evita error de interpolación cuando solo se ejecuta 'verify'.
+      - ${FIREBASE_KEY_PATH:-/dev/null}:/run/secrets/firebase-key:ro
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - cameia-gateway-net
+      - cameia-net
+
+  # ---------------------------------------------------------------------------
+  # Compilación y pruebas. No se levanta con 'up': se invoca a demanda.
+  #
+  #   docker compose run --rm verify
+  #
+  # Corre 'mvn verify' dentro de un contenedor Maven. Los tests usan mocks de
+  # Firebase y MockWebServer; no necesitan la red ni el servicio app corriendo.
+  # ---------------------------------------------------------------------------
   verify:
     image: maven:3.9-eclipse-temurin-21
     working_dir: /app
@@ -9,15 +74,23 @@ services:
       - .:/app
       - maven-cache:/root/.m2
     environment:
-      # Perfil de Spring que desactiva Firebase real e inyecta mocks
       SPRING_PROFILES_ACTIVE: test
-      # Variables mínimas para que el contexto de test levante sin error de propiedades
       FIREBASE_PROJECT_ID: test-project
       GOOGLE_APPLICATION_CREDENTIALS: /app/src/test/resources/firebase-noop.json
       CAMEIA_CUENTAS_URL: http://localhost:9001
       CAMEIA_PERFIL_URL: http://localhost:9002
       CAMEIA_ENTREVISTA_URL: http://localhost:9003
       SERVER_PORT: "0"
+    networks:
+      - cameia-gateway-net
 
 volumes:
   maven-cache:
+
+networks:
+  cameia-gateway-net:
+    driver: bridge
+  # Red compartida con los demás microservicios. Debe crearse antes de hacer 'up':
+  #   docker network create cameia-net
+  cameia-net:
+    external: true
