@@ -1,0 +1,23 @@
+services:
+  # Ejecuta 'mvn verify' dentro de un contenedor Maven.
+  # Uso: docker compose run --rm verify
+  verify:
+    image: maven:3.9-eclipse-temurin-21
+    working_dir: /app
+    command: mvn verify -B --no-transfer-progress
+    volumes:
+      - .:/app
+      - maven-cache:/root/.m2
+    environment:
+      # Perfil de Spring que desactiva Firebase real e inyecta mocks
+      SPRING_PROFILES_ACTIVE: test
+      # Variables mínimas para que el contexto de test levante sin error de propiedades
+      FIREBASE_PROJECT_ID: test-project
+      GOOGLE_APPLICATION_CREDENTIALS: /app/src/test/resources/firebase-noop.json
+      CAMEIA_CUENTAS_URL: http://localhost:9001
+      CAMEIA_PERFIL_URL: http://localhost:9002
+      CAMEIA_ENTREVISTA_URL: http://localhost:9003
+      SERVER_PORT: "0"
+
+volumes:
+  maven-cache:

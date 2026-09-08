@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>4.0.8</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>co.edu.unicauca.cameia</groupId>
+  <artifactId>cameia-gateway</artifactId>
+  <version>0.0.1-SNAPSHOT</version>
+  <name>cameia-gateway</name>
+  <description>API Gateway de CAMEIA — punto de entrada HTTP, autenticación transversal y enrutamiento</description>
+
+  <properties>
+    <java.version>21</java.version>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!--
+      Release train para Spring Boot 4.x.
+      VERIFICAR en https://spring.io/projects/spring-cloud antes de hacer push.
+      Si el build falla con "artifact not found", ajustar a la versión estable disponible.
+    -->
+    <spring-cloud.version>2025.1.3</spring-cloud.version>
+    <firebase-admin.version>9.3.0</firebase-admin.version>
+    <archunit.version>1.5.0</archunit.version>
+    <mockwebserver.version>4.12.0</mockwebserver.version>
+    <!--
+      Firebase Admin SDK trae grpc-netty-shaded (paquete relocado) pero Spring Cloud Gateway 5.x
+      necesita io.grpc.netty.NettyChannelBuilder del grpc-netty no-shaded para GrpcSslConfigurer.
+      La versión debe alinearse con la que Firebase Admin trae transitivamente.
+    -->
+    <grpc-netty.version>1.62.2</grpc-netty.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.springframework.cloud</groupId>
+        <artifactId>spring-cloud-dependencies</artifactId>
+        <version>${spring-cloud.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+
+    <!--
+      Gateway reactivo sobre WebFlux/Reactor.
+      No se usa spring-boot-starter-webmvc: el gateway no tiene lógica de negocio
+      y el enrutamiento es declarativo en YAML. Spring Cloud Gateway trae WebFlux incluido.
+    -->
+    <dependency>
+      <groupId>org.springframework.cloud</groupId>
+      <artifactId>spring-cloud-starter-gateway-server-webflux</artifactId>
+    </dependency>
+
+    <!--
+      Firebase Admin SDK — exclusivo del gateway (los microservicios no lo usan).
+      Verifica el ID Token y extrae custom claims (uid, plan).
+      El scope es compile porque el filter lo usa en runtime.
+    -->
+    <dependency>
+      <groupId>com.google.firebase</groupId>
+      <artifactId>firebase-admin</artifactId>
+      <version>${firebase-admin.version}</version>
+    </dependency>
+
+    <!-- Expone /actuator/health e /actuator/info sin autenticación (REQ-05). -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+
+    <!-- JUnit 5, AssertJ, Mockito. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Simula los microservicios downstream en los tests de contrato del filtro. -->
+    <dependency>
+      <groupId>com.squareup.okhttp3</groupId>
+      <artifactId>mockwebserver</artifactId>
+      <version>${mockwebserver.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!--
+      SCG 5.x detecta gRPC via @ConditionalOnClass(io.grpc.Channel.class); Firebase trae
+      grpc-api (Channel) pero no grpc-netty. GrpcSslConfigurer necesita NettyChannelBuilder
+      del grpc-netty no-shaded. Agregar explícitamente para que el bean se pueda introspect.
+    -->
+    <dependency>
+      <groupId>io.grpc</groupId>
+      <artifactId>grpc-netty</artifactId>
+      <version>${grpc-netty.version}</version>
+      <scope>runtime</scope>
+    </dependency>
+
+    <!-- Verifica que el gateway no importe JPA ni persistencia (reglas de código 3.4). -->
+    <dependency>
+      <groupId>com.tngtech.archunit</groupId>
+      <artifactId>archunit-junit5</artifactId>
+      <version>${archunit.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+
+</project>

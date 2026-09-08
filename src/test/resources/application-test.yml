@@ -1,0 +1,36 @@
+# Perfil de tests — desactiva Firebase real e inyecta un mock.
+spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.cloud.client.discovery.simple.SimpleDiscoveryClientAutoConfiguration
+      - org.springframework.cloud.client.discovery.composite.CompositeDiscoveryClientAutoConfiguration
+      - org.springframework.cloud.loadbalancer.config.LoadBalancerAutoConfiguration
+      - org.springframework.cloud.loadbalancer.config.BlockingLoadBalancerClientAutoConfiguration
+  cloud:
+    discovery:
+      enabled: false
+    loadbalancer:
+      enabled: false
+
+gateway:
+  firebase:
+    enabled: false  # FirebaseConfig no corre; el @TestConfiguration provee el mock
+  cors-allowed-origin: http://localhost:5173
+  timeout: 30000ms
+
+# Las URLs downstream se sobrescriben dinámicamente en cada test con @DynamicPropertySource
+# (el puerto de MockWebServer se asigna en runtime).
+
+server:
+  port: 0  # puerto aleatorio para evitar conflictos entre tests
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  level:
+    root: WARN
+    co.edu.unicauca.cameia.gateway: DEBUG
