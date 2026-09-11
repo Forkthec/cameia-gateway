@@ -7,7 +7,7 @@
   <parent>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-parent</artifactId>
-    <version>4.0.8</version>
+    <version>4.1.1</version>
     <relativePath/>
   </parent>
 
@@ -26,7 +26,7 @@
       Si el build falla con "artifact not found", ajustar a la versión estable disponible.
     -->
     <spring-cloud.version>2025.1.3</spring-cloud.version>
-    <firebase-admin.version>9.3.0</firebase-admin.version>
+    <firebase-admin.version>9.10.0</firebase-admin.version>
     <archunit.version>1.5.0</archunit.version>
     <mockwebserver.version>4.12.0</mockwebserver.version>
     <!--
@@ -34,7 +34,7 @@
       necesita io.grpc.netty.NettyChannelBuilder del grpc-netty no-shaded para GrpcSslConfigurer.
       La versión debe alinearse con la que Firebase Admin trae transitivamente.
     -->
-    <grpc-netty.version>1.62.2</grpc-netty.version>
+    <grpc-netty.version>1.84.0</grpc-netty.version>
   </properties>
 
   <dependencyManagement>
