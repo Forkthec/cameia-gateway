@@ -40,7 +40,7 @@ no incluye `spring-boot-starter-data-jpa`, `postgresql` ni `flyway`.
 ## 2. Estructura de paquetes
 
 ```
-co.edu.unicauca.cameia.gateway
+tech.cameia.gateway
 ├── GatewayApplication.java                  // @SpringBootApplication
 ├── config/
 │   ├── FirebaseConfig.java                  // inicializa FirebaseApp al arrancar
@@ -62,7 +62,7 @@ no tiene modelo de dominio ni persistencia. ArchUnit verificará que `filter` no
 | Clases | PascalCase | `FirebaseAuthGlobalFilter` |
 | Métodos y variables | camelCase | `extractUserPlan` |
 | Constantes | UPPER_SNAKE | `X_USER_ID_HEADER` |
-| Paquetes | lowercase sin guiones | `co.edu.unicauca.cameia.gateway.filter` |
+| Paquetes | lowercase sin guiones | `tech.cameia.gateway.filter` |
 | Config YAML (gateway) | `gateway.` prefix | `gateway.cors.allowed-origin` |
 | Env vars | UPPER_SNAKE Spring estándar | `GATEWAY_CORS_ALLOWED_ORIGIN` |
 
@@ -208,7 +208,7 @@ management:
 logging:
   level:
     root: ${LOG_LEVEL:INFO}
-    co.edu.unicauca.cameia.gateway: DEBUG
+    tech.cameia.gateway: DEBUG
 ```
 
 ### 3.5 CORS — `application.yml` (global, no en Java)
@@ -269,7 +269,7 @@ El gateway **no tiene base de datos** → no hay H2, no hay Flyway en tests.
 ### 4.3 Tests de arquitectura (ArchUnit)
 
 ```java
-@AnalyzeClasses(packages = "co.edu.unicauca.cameia.gateway")
+@AnalyzeClasses(packages = "tech.cameia.gateway")
 clase GatewayArchTest:
   // filter no importa config (excepto FirebaseAuth que se inyecta por constructor)
   // ningún paquete importa jakarta.persistence

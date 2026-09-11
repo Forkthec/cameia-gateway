@@ -1,4 +1,4 @@
-package co.edu.unicauca.cameia.gateway.exception;
+package tech.cameia.gateway.exception;
 
 import org.springframework.core.annotation.Order;
 import org.springframework.core.io.buffer.DataBuffer;

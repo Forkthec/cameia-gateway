@@ -1,10 +1,10 @@
-package co.edu.unicauca.cameia.gateway.filter;
+package tech.cameia.gateway.filter;
 
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
 import com.google.firebase.auth.FirebaseToken;
 
-import co.edu.unicauca.cameia.gateway.config.TestFirebaseConfig;
+import tech.cameia.gateway.config.TestFirebaseConfig;
 
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;

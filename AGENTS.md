@@ -74,8 +74,8 @@ El modelo completo de seguridad, que es la razón de existir de este componente,
 
 **No** es responsable de: lógica de negocio, persistencia, cálculo de cuota ni validación de datos de dominio.
 
-- Stack: Java 21, Spring Boot 4.0.8, **Spring Cloud Gateway 5.0.3** (WebFlux reactivo), Firebase Admin SDK.
-- La versión que manda es la de `pom.xml`, y es la de esta línea. El `README.md` y los specs de CM-104 y CM-113 afirman Spring Boot `4.1.1`: están equivocados y hay que corregirlos, no citarlos.
+- Stack: Java 21, **Spring Boot 4.1.1**, **Spring Cloud Gateway 5.0.3** (WebFlux reactivo), Firebase Admin SDK.
+- `4.1.1` es la línea base del equipo, la que ya declaraban el `README.md` y los specs de CM-104. El `pom.xml` se quedó en `4.0.8` y quedó corregido: `4.1.1` con el release train `spring-cloud-dependencies:2025.1.3`, verificado con la suite completa en verde.
 - Puerto: 8080.
 - **Sin base de datos propia.** Sin Spring Data, sin JPA.
 
@@ -97,7 +97,7 @@ El modelo completo de seguridad, que es la razón de existir de este componente,
 ## 3. Estructura de paquetes
 
 ```text
-co.edu.unicauca.cameia.gateway
+tech.cameia.gateway
 ├── config          FirebaseConfig, GatewayProperties (beans de arranque)
 ├── filter          GlobalFilter — auth de entrada, identidad y firma OIDC de salida
 └── exception       GlobalErrorHandler — formato JSON de errores HTTP

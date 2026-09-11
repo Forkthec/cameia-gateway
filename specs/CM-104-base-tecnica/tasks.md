@@ -22,7 +22,7 @@ Marcar cada tarea al completarla. No pasar a la siguiente sección hasta que
 
 - [x] Crear `pom.xml` con:
   - [x] Parent `spring-boot-starter-parent:4.1.1`
-  - [x] `groupId: co.edu.unicauca.cameia`, `artifactId: cameia-gateway`
+  - [x] `groupId: tech.cameia`, `artifactId: cameia-gateway`
   - [x] BOM `spring-cloud-dependencies:2025.0.x` (verificar versión exacta en spring.io)
   - [x] Dependencia `spring-cloud-starter-gateway` (sin versión — la gestiona el BOM)
   - [x] Dependencia `firebase-admin:9.4.x` (verificar versión exacta en Maven Central)
@@ -31,7 +31,7 @@ Marcar cada tarea al completarla. No pasar a la siguiente sección hasta que
   - [x] Dependencia `archunit-junit5:1.5.0` scope test
   - [x] Plugin `spring-boot-maven-plugin`
   - [x] Propiedad `<java.version>21</java.version>`
-- [x] Crear clase `GatewayApplication.java` en `co.edu.unicauca.cameia.gateway`
+- [x] Crear clase `GatewayApplication.java` en `tech.cameia.gateway`
   con `@SpringBootApplication` y método `main`
 
 ---

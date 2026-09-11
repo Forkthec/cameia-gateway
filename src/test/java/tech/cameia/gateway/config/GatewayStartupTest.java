@@ -1,6 +1,6 @@
-package co.edu.unicauca.cameia.gateway.config;
+package tech.cameia.gateway.config;
 
-import co.edu.unicauca.cameia.gateway.GatewayApplication;
+import tech.cameia.gateway.GatewayApplication;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.SpringApplication;

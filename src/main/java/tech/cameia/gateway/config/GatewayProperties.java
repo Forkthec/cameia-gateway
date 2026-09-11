@@ -1,4 +1,4 @@
-package co.edu.unicauca.cameia.gateway.config;
+package tech.cameia.gateway.config;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;

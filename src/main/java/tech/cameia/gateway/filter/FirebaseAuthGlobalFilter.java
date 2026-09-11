@@ -1,4 +1,4 @@
-package co.edu.unicauca.cameia.gateway.filter;
+package tech.cameia.gateway.filter;
 
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
