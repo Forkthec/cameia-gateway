@@ -1,0 +1,58 @@
+name: CI # nombre de este pipeline, visible en la pestaña "Actions" de GitHub
+
+# Corre en cada PR hacia develop/main y en cada push a develop (integración), tal como exige
+# la guía DevOps del sprint (§2.7): valida el cambio antes de fusionar y otra vez al integrar.
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop]
+
+# Cancela una corrida anterior del mismo PR/rama cuando llega un push nuevo: evita gastar
+# minutos de Actions verificando un commit que ya quedó obsoleto.
+concurrency:
+  group: ci-gateway-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# Mínimo privilegio (guía DevOps §2.9): este job solo lee código, no publica nada ni
+# necesita escribir en el repo.
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: Build, tests y análisis
+    runs-on: ubuntu-latest # igual que los otros workflows del repo; sin motivo para otro
+    steps:
+      # Descarga el código del commit/PR que disparó el workflow.
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Instala Java 21 (Temurin) y cachea el repositorio local de Maven entre corridas.
+      # Este repo no tiene Maven Wrapper todavía (pendiente de confirmación con Backend,
+      # ver comunicaciones/11092026_arquitectura_cambios-soporte-devops-despliegue.md), así
+      # que se usa el Maven que trae el runner.
+      - name: Configurar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      # "mvn verify" compila, corre las pruebas (incluida ArchUnit, que valida la
+      # arquitectura del proyecto) y empaqueta — todo en un solo comando, sin desplegar
+      # nada. Los tests del gateway usan mocks de Firebase y MockWebServer, no necesitan
+      # red real ni una base de datos.
+      - name: Build + pruebas (mvn verify)
+        run: mvn -B -ntp verify
+
+      # Publica el reporte de pruebas como artefacto, aunque el paso anterior haya
+      # fallado — permite revisar qué se alcanzó a ejecutar sin repetir la corrida.
+      - name: Publicar reporte de pruebas
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cameia-gateway-reporte-pruebas
+          path: target/surefire-reports/
+          retention-days: 14
+          if-no-files-found: warn
