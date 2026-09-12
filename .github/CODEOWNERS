@@ -1,6 +1,12 @@
 # CODEOWNERS informativo (Orden 3 de la guía DevOps, CM-144).
-# Deliberadamente ligero: solo rutas críticas de CI/CD y gobierno del propio repo.
-# No se activó "Require review from Code Owners" en la protección de rama —
-# esto asigna revisor sugerido, no bloquea el merge.
+# Deliberadamente ligero, sin bloquear merges: no se activó "Require review from Code
+# Owners" en la protección de rama, esto sugiere revisor, no lo exige.
+# El orden importa: la última línea que coincide con un archivo es la que aplica.
+#
+# Se usa cameia-integration-reviewers (no cameia-backend/cameia-frontend) porque este
+# repo es la frontera entre backend y frontend, y porque cameia-frontend hoy tiene un
+# solo integrante: si esa persona abre el PR, GitHub no le pide revisión a sí misma y
+# la sugerencia quedaría vacía.
 
+*          @Forkthec/cameia-integration-reviewers
 /.github/  @Forkthec/cameia-devops
