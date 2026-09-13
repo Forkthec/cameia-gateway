@@ -45,7 +45,7 @@ Es la misma solución que el repositorio ya usa para Firebase: `TestFirebaseConf
 
 ### Por qué la interfaz vive en `filter` y no en `config`
 
-La regla ArchUnit `filterNoImportaConfig`
+La regla ArchUnit `filterDoesNotImportConfig`
 (`src/test/java/tech/cameia/gateway/arch/GatewayArchTest.java:25`) prohíbe que una clase de
 `filter` acceda al paquete `config`. Por eso:
 
@@ -395,7 +395,7 @@ basta, hay que demostrar que **no se reenvió nada**.
 
 ### ArchUnit
 
-Sin reglas nuevas. `filterNoImportaConfig` debe seguir en verde: ninguna de las tres clases de
+Sin reglas nuevas. `filterDoesNotImportConfig` debe seguir en verde: ninguna de las tres clases de
 `filter` importa nada de `config`. Es la prueba que justifica el reparto de §1.
 
 ---

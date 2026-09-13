@@ -14,7 +14,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class GatewayStartupTest {
 
     @Test
-    void sinFirebaseProjectId_elArranqueFalla() {
+    void missingFirebaseProjectId_startupFails() {
         // Sin FIREBASE_PROJECT_ID, Spring no puede resolver ${FIREBASE_PROJECT_ID}
         // y lanza una excepción antes de completar el contexto.
         assertThatThrownBy(() ->

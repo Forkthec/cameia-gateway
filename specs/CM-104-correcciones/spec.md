@@ -3,7 +3,7 @@
 - **HU asociada:** CM-104 (revisión) — correcciones detectadas al escanear la base técnica
 - **Sprint:** 1
 - **Fecha:** 11/09/2026
-- **Estado:** propuesta pendiente de aprobación
+- **Estado:** Revisada, Corregida y aprovada por Juan Vela
 - **Flujo SDD:** Fase 1 — Requisitos EARS
 - **Rama:** `CM-104-correcciones` → `develop`
 - **Fuentes:**
@@ -129,11 +129,11 @@ sin reenviar la solicitud al microservicio destino.
 > CM-104 cubría token ausente e inválido. El valor vacío (`Authorization: Bearer `) produce hoy
 > una `IllegalArgumentException` que escapa al manejo de `FirebaseAuthException` y termina en `500`.
 
-#### REQ-03 (corregido) — Enrutamiento público
+#### REQ-03 (corregido) — Enrutamiento público (que no requeran de login)
 
 ```
-Cuando la solicitud es `POST /webhooks/wompi`,
-el sistema debe enrutarla a cameia-cuentas sin verificar el token de Firebase,
+Cuando la solicitud va a una ruta que no requiera login,
+el sistema debe enrutarla al microservicio correspondiente sin verificar el token de Firebase,
 y debe eliminar de la solicitud reenviada toda cabecera `X-User-*`
 recibida del cliente.
 ```

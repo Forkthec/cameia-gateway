@@ -34,7 +34,7 @@ docker compose run --rm verify
 - [x] T-00 · Consolidar `AGENTS.md` como único documento de reglas y eliminar `CLAUDE.md`
 - [x] T-01 · Corregir la URL de la ruta de Cuentas en `AGENTS.md` §5: decía `/api/v1/accounts/**`, el `application.yml` declara `/api/v1/users/**` (REQ-04)
 - [x] T-02 · Completar la tabla de rutas de `AGENTS.md` §5: faltaban `/api/v1/voice-service/**` y `/api/v1/audit/**`, y `/webhooks/wompi` aparecía sin destino (REQ-04)
-- [x] T-03 · Corregir el diagrama de dependencias de `AGENTS.md` §3: presentaba `filter → config` como permitido, que es justo lo que prohíbe la prueba ArchUnit `filterNoImportaConfig`
+- [x] T-03 · Corregir el diagrama de dependencias de `AGENTS.md` §3: presentaba `filter → config` como permitido, que es justo lo que prohíbe la prueba ArchUnit `filterDoesNotImportConfig`
 - [x] T-04 · Corregir la descripción de `GatewayProperties` en `AGENTS.md` §4: el campo es `timeout` (`Duration`), no `timeoutMs`
 - [x] T-05 · Corregir la referencia cruzada de la bitácora de IA en `AGENTS.md` §0: apuntaba a §7 en vez de §10
 
@@ -55,9 +55,9 @@ docker compose run --rm verify
 
 > Primero esto, porque los bloques 2 y 4 lo usan para registrar en el log qué solicitud fallaba.
 
-- [ ] T-11 · En `FirebaseAuthGlobalFilter`, añadir la constante `X_REQUEST_ID = "X-Request-Id"` y un método privado `resolveRequestId(ServerWebExchange)` que devuelva el valor de la cabecera entrante si existe y no está en blanco, o `UUID.randomUUID().toString()` si no (REQ-09)
-- [ ] T-12 · Llamar a `resolveRequestId` al principio de `filter(...)`, **antes** de decidir si la ruta es pública, y fijar la cabecera en la solicitud reenviada en los dos caminos (REQ-09)
-- [ ] T-13 · Añadir dos pruebas en `FirebaseAuthGlobalFilterTest`: con `X-Request-Id: abc` el destino recibe `abc`; sin la cabecera, el destino recibe un valor generado y no vacío (pruebas 9 y 10 del plan)
+- [x] T-11 · En `FirebaseAuthGlobalFilter`, añadir la constante `X_REQUEST_ID = "X-Request-Id"` y un método privado `resolveRequestId(ServerWebExchange)` que devuelva el valor de la cabecera entrante si existe y no está en blanco, o `UUID.randomUUID().toString()` si no (REQ-09)
+- [x] T-12 · Llamar a `resolveRequestId` al principio de `filter(...)`, **antes** de decidir si la ruta es pública, y fijar la cabecera en la solicitud reenviada en los dos caminos (REQ-09)
+- [x] T-13 · Añadir dos pruebas en `FirebaseAuthGlobalFilterTest`: con `X-Request-Id: abc` el destino recibe `abc`; sin la cabecera, el destino recibe un valor generado y no vacío (pruebas 9 y 10 del plan)
 
 **Cierre de bloque:** `docker compose run --rm verify` en verde.
 
@@ -72,9 +72,10 @@ docker compose run --rm verify
 - [ ] T-16 · Añadir un método privado `setIfPresent(HttpHeaders, String, String)` que fije la cabecera solo si el valor no es `null` ni está en blanco. Es lo que evita propagar cabeceras vacías (REQ-01)
 - [ ] T-17 · Reescribir `propagateClaims` como `withIdentity`: primero borra todas las de `IDENTITY_HEADERS` y `Authorization`, después fija las cinco cabeceras con `headers(h -> h.set(...))`. **Cambiar `.header(...)` por `h.set(...)` es el corazón de la tarea**: `.header(...)` añade un segundo valor en vez de reemplazar (REQ-07, plan §3.3)
 - [ ] T-18 · Añadir el método `withoutIdentity` para rutas públicas: borra todas las de `IDENTITY_HEADERS` y fija `X-Request-Id`. Aplicarlo en la rama de ruta pública de `filter(...)`, que hoy hace `return chain.filter(exchange)` sin tocar nada (REQ-03, REQ-10)
-- [ ] T-19 · Ampliar la prueba `tokenValidoConPlan_propagaHeadersAlDownstream` para afirmar las cinco cabeceras, y añadir la prueba de suplantación: el cliente envía `X-User-Id: atacante` con token válido y el destino recibe **un solo** valor, el del token. Usa `RecordedRequest.getHeaders().values("X-User-Id")` y afirma que tiene tamaño 1 (pruebas 1 y 2 del plan)
+- [ ] T-19 · Ampliar la prueba `validTokenWithPlan_propagatesHeadersToDownstream` para afirmar las cinco cabeceras, y añadir la prueba de suplantación: el cliente envía `X-User-Id: atacante` con token válido y el destino recibe **un solo** valor, el del token. Usa `RecordedRequest.getHeaders().values("X-User-Id")` y afirma que tiene tamaño 1 (pruebas 1 y 2 del plan)
 - [ ] T-20 · Ampliar la prueba de `/webhooks/wompi`: el cliente envía `X-User-Id` propio y el destino no recibe la cabecera (prueba 3 del plan)
 - [ ] T-21 · Añadir tres pruebas de claims: `roles` como lista → `free,premium`; `roles` como cadena → tal cual y sin cambiar mayúsculas; token sin `email` → la cabecera se omite en vez de llegar vacía (pruebas 4, 5 y 6 del plan)
+- [ ] T-21a · Registrar en el log, en nivel `WARN`, cada rechazo de autenticación con el `X-Request-Id` de la solicitud: `writeUnauthorized` recibe el `requestId` y escribe `Solicitud rechazada por autenticación [requestId={}]`. Nunca registrar el token ni la cabecera `Authorization`. Añadir una prueba que capture el log y afirme que el rechazo contiene el `requestId` enviado (REQ-09, tercera cláusula) — *añadida el 12/09/2026: ninguna tarea cubría esa cláusula*
 
 **Cierre de bloque:** `docker compose run --rm verify` en verde.
 
@@ -85,6 +86,7 @@ docker compose run --rm verify
 - [ ] T-22 · En `FirebaseAuthGlobalFilter`, extraer el token con `trim()` y responder `401` si queda vacío, **antes** de llamar a Firebase. Hoy `Authorization: Bearer ` (con el valor vacío) llega a `verifyIdToken("")`, que lanza `IllegalArgumentException` y termina en `500` (REQ-02, plan §3.4)
 - [ ] T-23 · Añadir el método privado `isTokenRejection(Throwable)` que devuelva `true` para `FirebaseAuthException` e `IllegalArgumentException`, y usarlo en el `onErrorResume`. **No capturar `Throwable` en bruto**: un fallo de red al hablar con Firebase es problema del Gateway y debe seguir siendo `500` (REQ-02, plan §3.4)
 - [ ] T-24 · Añadir dos pruebas: `Authorization: Bearer ` (vacío) → `401` con `code: AUTH_REQUIRED`; `Authorization: Basic xyz` → `401` (pruebas 7 y 8 del plan)
+- [ ] T-24a · Incluir la cabecera `X-Request-Id` en toda respuesta `401` del filtro, con el mismo valor que resolvió `resolveRequestId`, fijada con `set`. Añadir una prueba: sin token y con `X-Request-Id: abc` → `401` con la cabecera de respuesta `X-Request-Id: abc` (REQ-09, plan §1) — *añadida el 12/09/2026: el plan lo pedía y ninguna tarea lo cubría*
 
 **Cierre de bloque:** `docker compose run --rm verify` en verde.
 
@@ -105,7 +107,7 @@ docker compose run --rm verify
 
 ## Bloque 5 — Limpieza: configuración inerte y artefactos que faltan
 
-- [ ] T-31 · Eliminar `/actuator/health` y `/actuator/info` de `PUBLIC_PATHS`, y dejar un comentario en el código explicando por qué: Actuator lo atiende su propio handler y el filtro nunca lo ve. La prueba `actuatorHealth_sinToken_retorna200` **no se toca**: es la red de seguridad que demuestra que el cambio es inocuo (REQ-13)
+- [ ] T-31 · Eliminar `/actuator/health` y `/actuator/info` de `PUBLIC_PATHS`, y dejar un comentario en el código explicando por qué: Actuator lo atiende su propio handler y el filtro nunca lo ve. La prueba `actuatorHealth_withoutToken_returns200` **no se toca**: es la red de seguridad que demuestra que el cambio es inocuo (REQ-13)
 - [ ] T-32 · Eliminar `GatewayProperties.java` y la anotación `@EnableConfigurationProperties(GatewayProperties.class)` de `GatewayApplication`. Eliminar también las claves `gateway.cors-allowed-origin` y `gateway.timeout` de `application-test.yml`. **`gateway.firebase.enabled` se queda**: la usa el `@ConditionalOnProperty` de `FirebaseConfig` (REQ-14, plan §3.6)
 - [ ] T-33 · Retirar `X-User-Id` y `X-User-Plan` de `allowedHeaders` en el CORS de `application.yml`, y añadir `X-Request-Id` (REQ-NF-01, plan §3.7)
 - [ ] T-34 · Crear `src/main/resources/application-local.yml` con el override de log del plan §3.8. El perfil `local` es el activo por defecto y hoy no existe el archivo, aunque `tasks.md` de CM-104 lo marque como creado (REQ-15)

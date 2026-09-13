@@ -347,14 +347,14 @@ existe en la URL pero nada escucha en él.
 
 | Prueba actual | Cambio |
 |---|---|
-| `tokenValidoConPlan_propagaHeadersAlDownstream` | Se amplían las aserciones a las 5 cabeceras |
-| `wompiWebhook_sinToken_pasaAlDownstreamSinHeadersIdentidad` | Ahora además envía `X-User-Id` propio y afirma que no llega |
-| `actuatorHealth_sinToken_retorna200` | **No cambia.** Es la red de seguridad de `REQ-13`: si sigue en verde tras quitar Actuator de la lista de rutas públicas, la eliminación fue inocua |
+| `validTokenWithPlan_propagatesHeadersToDownstream` | Se amplían las aserciones a las 5 cabeceras |
+| `wompiWebhook_withoutToken_reachesDownstreamWithoutIdentityHeaders` | Ahora además envía `X-User-Id` propio y afirma que no llega |
+| `actuatorHealth_withoutToken_returns200` | **No cambia.** Es la red de seguridad de `REQ-13`: si sigue en verde tras quitar Actuator de la lista de rutas públicas, la eliminación fue inocua |
 
 ### ArchUnit
 
 Sin reglas nuevas. Las tres existentes deben seguir en verde; eliminar `GatewayProperties` no
-afecta a `filterNoImportaConfig`, porque el filtro nunca la importó.
+afecta a `filterDoesNotImportConfig`, porque el filtro nunca la importó.
 
 ---
 

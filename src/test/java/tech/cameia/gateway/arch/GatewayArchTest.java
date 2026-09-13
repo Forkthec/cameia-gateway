@@ -10,19 +10,19 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 class GatewayArchTest {
 
     @ArchTest
-    static final ArchRule sinJpa =
+    static final ArchRule noJpa =
             noClasses()
                     .should().accessClassesThat().resideInAPackage("jakarta.persistence..")
                     .because("El gateway no tiene persistencia — ningún paquete puede importar JPA");
 
     @ArchTest
-    static final ArchRule sinSpringDataJpa =
+    static final ArchRule noSpringDataJpa =
             noClasses()
                     .should().accessClassesThat().resideInAPackage("org.springframework.data.jpa..")
                     .because("El gateway no usa Spring Data JPA");
 
     @ArchTest
-    static final ArchRule filterNoImportaConfig =
+    static final ArchRule filterDoesNotImportConfig =
             noClasses()
                     .that().resideInAPackage("..filter..")
                     .should().accessClassesThat().resideInAPackage("..config..")

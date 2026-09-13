@@ -112,7 +112,7 @@ filter         recibe sus beans por inyección de constructor, sin importar el p
 exception      independiente
 ```
 
-- `filter` **no importa** el paquete `config`. La prueba ArchUnit `filterNoImportaConfig` lo verifica: un filtro recibe `FirebaseAuth` o un proveedor de credenciales por constructor, nunca la clase de configuración que los produce.
+- `filter` **no importa** el paquete `config`. La prueba ArchUnit `filterDoesNotImportConfig` lo verifica: un filtro recibe `FirebaseAuth` o un proveedor de credenciales por constructor, nunca la clase de configuración que los produce.
 - `filter` tampoco importa `exception`: cada uno escribe su propia respuesta.
 - Ningún paquete importa `jakarta.persistence` ni `org.springframework.data.jpa`. ArchUnit lo verifica.
 

@@ -61,7 +61,7 @@ docker compose run --rm verify
 
 ## Bloque 2 — La fuente de tokens
 
-- [ ] T-06 · Crear la interfaz `OidcTokenSource` en el paquete `filter`, con una sola operación: `Mono<String> tokenFor(String audience)`. **Va en `filter`, no en `config`**: la regla ArchUnit `filterNoImportaConfig` prohíbe que el filtro mire al paquete `config` (plan §1)
+- [ ] T-06 · Crear la interfaz `OidcTokenSource` en el paquete `filter`, con una sola operación: `Mono<String> tokenFor(String audience)`. **Va en `filter`, no en `config`**: la regla ArchUnit `filterDoesNotImportConfig` prohíbe que el filtro mire al paquete `config` (plan §1)
 - [ ] T-07 · Crear `GoogleIdTokenSource` con un `ConcurrentHashMap<String, IdTokenCredentials>` por audience. Se cachea **el objeto de credenciales, no la cadena del token**: la renovación la decide la librería (REQ-OIDC-05, REQ-OIDC-06, plan §3.4)
 - [ ] T-08 · Envolver la llamada bloqueante en `Mono.fromCallable(...).subscribeOn(Schedulers.boundedElastic())`, igual que hace `FirebaseAuthGlobalFilter` con `verifyIdToken` (REQ-NF-OIDC-02)
 - [ ] T-09 · Crear `OidcConfig` en `config`, con `@ConditionalOnProperty` sobre `gateway.oidc.signing-enabled` y los beans de `OidcTokenSource` y del filtro. El bean de credenciales reales lleva su propio interruptor `gateway.oidc.google-credentials.enabled`, que es lo que permite apagarlo en pruebas igual que `FirebaseConfig` (REQ-OIDC-05, REQ-NF-OIDC-03, plan §3.8)
