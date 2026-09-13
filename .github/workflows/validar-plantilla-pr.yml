@@ -9,9 +9,10 @@ jobs:
   validar-plantilla:
     name: Validar plantilla de PR
     runs-on: ubuntu-latest
+    if: github.actor != 'dependabot[bot]' # CM-138: Dependabot no puede seguir CM-<n>-<desc> ni la plantilla de 8 campos
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Autoprueba del validador (CM-123 — siempre bloqueante, no es fase informativa)
         run: python3 .github/scripts/test_pr_policy.py
