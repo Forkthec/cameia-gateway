@@ -70,6 +70,11 @@ jobs:
 
       # CAMEIA_PERFIL_URL/CAMEIA_CUENTAS_URL sin valor real: Perfil y Cuentas no
       # tienen despliegue todavía (mismo marcador temporal en los dos ambientes).
+      # FIREBASE_PROJECT_ID es obligatorio: FirebaseConfig.java falla el arranque sin
+      # él (fail-fast, REQ-06) — mismo proyecto que VITE_FIREBASE_PROJECT_ID en
+      # cameia-web. Sin --allow-unauthenticated a propósito: el SA de despliegue no
+      # tiene (ni necesita) permiso para tocar la política IAM del servicio — el
+      # acceso público se otorga una sola vez, fuera de este pipeline (ver PR).
       - name: Desplegar a Cloud Run
         run: |
           gcloud run deploy "${{ inputs.servicio }}" \
@@ -77,11 +82,10 @@ jobs:
             --project="${{ vars.GCP_PROJECT_ID }}" \
             --region="${{ env.REGION }}" \
             --platform=managed \
-            --allow-unauthenticated \
             --min-instances=${{ inputs.min_instances }} \
             --max-instances=2 \
             --service-account="25798898664-compute@developer.gserviceaccount.com" \
-            --set-env-vars="CAMEIA_PERFIL_URL=http://cameia-perfil:8080,CAMEIA_CUENTAS_URL=http://cameia-cuentas:8080"
+            --set-env-vars="CAMEIA_PERFIL_URL=http://cameia-perfil:8080,CAMEIA_CUENTAS_URL=http://cameia-cuentas:8080,FIREBASE_PROJECT_ID=${{ vars.GCP_PROJECT_ID }}"
 
       - name: URL del servicio desplegado
         run: gcloud run services describe "${{ inputs.servicio }}" --project="${{ vars.GCP_PROJECT_ID }}" --region="${{ env.REGION }}" --format="value(status.url)"
