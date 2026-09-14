@@ -1,0 +1,87 @@
+name: Build, publicar imagen y desplegar a Cloud Run
+
+# Workflow reutilizable: los 8 pasos son los mismos para staging y producción, solo
+# cambian el Environment y el nombre del Cloud Run Service. Lo llama
+# despliegue-continuo.yml una vez por ambiente (CM-156).
+on:
+  workflow_call:
+    inputs:
+      ambiente:
+        description: Environment de GitHub a usar (staging | production)
+        required: true
+        type: string
+      servicio:
+        description: Nombre del Cloud Run Service a desplegar
+        required: true
+        type: string
+      min_instances:
+        required: false
+        type: number
+        default: 0
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  REGION: us-east1
+  AR_REPO: cameia
+  # Nombre de la imagen en Artifact Registry: fijo, no cambia con el ambiente. El
+  # nombre del Cloud Run Service sí cambia (inputs.servicio).
+  IMAGEN_NOMBRE: cameia-gateway
+
+jobs:
+  desplegar:
+    name: Desplegar (${{ inputs.ambiente }})
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.ambiente }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # Cuenta de servicio compartida entre gateway/perfil/cuentas, con permisos
+      # mínimos y binding WIF condicionado a este repo (CM-156).
+      - name: Autenticar en GCP (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Configurar gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Autenticar Docker contra Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      # Tag corto (7 caracteres), convención de la guía DevOps del sprint.
+      - name: Calcular tag de imagen
+        id: imagen
+        run: |
+          SHA_CORTO="${GITHUB_SHA::7}"
+          IMAGEN="${{ env.REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ env.AR_REPO }}/${{ env.IMAGEN_NOMBRE }}:${SHA_CORTO}"
+          echo "imagen=${IMAGEN}" >> "$GITHUB_OUTPUT"
+
+      - name: Build de la imagen
+        run: docker build -t "${{ steps.imagen.outputs.imagen }}" .
+
+      - name: Publicar imagen en Artifact Registry
+        run: docker push "${{ steps.imagen.outputs.imagen }}"
+
+      # CAMEIA_PERFIL_URL/CAMEIA_CUENTAS_URL sin valor real: Perfil y Cuentas no
+      # tienen despliegue todavía (mismo marcador temporal en los dos ambientes).
+      - name: Desplegar a Cloud Run
+        run: |
+          gcloud run deploy "${{ inputs.servicio }}" \
+            --image="${{ steps.imagen.outputs.imagen }}" \
+            --project="${{ vars.GCP_PROJECT_ID }}" \
+            --region="${{ env.REGION }}" \
+            --platform=managed \
+            --allow-unauthenticated \
+            --min-instances=${{ inputs.min_instances }} \
+            --max-instances=2 \
+            --service-account="25798898664-compute@developer.gserviceaccount.com" \
+            --set-env-vars="CAMEIA_PERFIL_URL=http://cameia-perfil:8080,CAMEIA_CUENTAS_URL=http://cameia-cuentas:8080"
+
+      - name: URL del servicio desplegado
+        run: gcloud run services describe "${{ inputs.servicio }}" --project="${{ vars.GCP_PROJECT_ID }}" --region="${{ env.REGION }}" --format="value(status.url)"

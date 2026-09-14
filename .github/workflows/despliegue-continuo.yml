@@ -1,89 +1,42 @@
-name: CD # despliegue a Cloud Run (staging desde develop)
+name: CD # despliegue a Cloud Run — staging desde develop, producción desde main
 
-# CM-156: primer microservicio backend con CD real. Alcance reducido a propósito: solo
-# staging, solo gateway (Perfil/Cuentas/producción quedan para tareas futuras del mismo
-# tamaño — ver CM-156 en Jira). Corre solo en push a develop, nunca en pull_request, para
-# no gastar minutos de Actions ni desplegar código sin fusionar.
+# CM-156. `main` no admite push directo (CLAUDE.md raíz §3): la única forma de que un
+# commit llegue ahí es fusionando un PR, así que "push a main" y "se fusionó el PR de
+# promoción a main" son el mismo evento. Los 8 pasos de build+push+deploy están en
+# desplegar-servicio.yml (workflow reutilizable) para no repetirlos por ambiente; acá
+# solo se decide cuándo corre cada uno y con qué parámetros.
 on:
   push:
-    branches: [develop]
+    branches: [develop, main]
 
 concurrency:
   group: cd-gateway-${{ github.ref }}
   cancel-in-progress: false # nunca cancelar un deploy a medias
 
-# Mínimo privilegio: solo lee código y pide el token OIDC para WIF (guía DevOps §2.9).
+# id-token: write tiene que declararse acá, en el workflow que llama — GitHub no deja
+# que un workflow reutilizado pida más permiso del que ya tiene el que lo invoca.
 permissions:
   contents: read
   id-token: write
 
-env:
-  REGION: us-east1
-  SERVICE: cameia-gateway
-  # Repositorio de Artifact Registry ya aprovisionado por Terraform (CM-150).
-  AR_REPO: cameia
-
 jobs:
-  desplegar-staging:
-    name: Build, publicar imagen y desplegar a Cloud Run (staging)
-    runs-on: ubuntu-latest
-    environment: staging
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
+  staging:
+    name: Staging (develop)
+    if: github.ref == 'refs/heads/develop'
+    uses: ./.github/workflows/desplegar-servicio.yml
+    with:
+      ambiente: staging
+      servicio: cameia-gateway
+      min_instances: 0
 
-      # Credencial temporal vía Workload Identity Federation — mismo patrón ya en
-      # producción real en cameia-web (despliegue-continuo.yml). La cuenta de servicio
-      # (github-action-cameia-backend) es compartida entre gateway/perfil/cuentas, con
-      # permisos mínimos (Artifact Registry Writer + Cloud Run Developer) y su binding WIF
-      # condicionado a cada repo por separado — ver CM-156.
-      - name: Autenticar en GCP (WIF)
-        uses: google-github-actions/auth@v2
-        with:
-          project_id: ${{ vars.GCP_PROJECT_ID }}
-          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
-
-      - name: Configurar gcloud
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Autenticar Docker contra Artifact Registry
-        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
-
-      # Tag corto (7 caracteres), misma convención de nomenclatura de imagen que la guía
-      # DevOps del sprint: <region>-docker.pkg.dev/<proyecto>/<repo>/<componente>:<sha>.
-      - name: Calcular tag de imagen
-        id: imagen
-        run: |
-          SHA_CORTO="${GITHUB_SHA::7}"
-          IMAGEN="${{ env.REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ env.AR_REPO }}/${{ env.SERVICE }}:${SHA_CORTO}"
-          echo "imagen=${IMAGEN}" >> "$GITHUB_OUTPUT"
-
-      - name: Build de la imagen
-        run: docker build -t "${{ steps.imagen.outputs.imagen }}" .
-
-      - name: Publicar imagen en Artifact Registry
-        run: docker push "${{ steps.imagen.outputs.imagen }}"
-
-      # CAMEIA_PERFIL_URL y CAMEIA_CUENTAS_URL no tienen valor por defecto en
-      # application.yml (a diferencia de entrevista/voz/auditoria) — sin ellas Spring no
-      # arranca. Perfil y Cuentas todavía no están desplegados (tareas futuras), así que
-      # se usa el mismo patrón de host que no resuelve ya usado para voz/auditoria en el
-      # propio application.yml: el gateway arranca sano y esas rutas responden 503 hasta
-      # que la tarea de "wiring final" (después de desplegar Perfil/Cuentas) las apunte a
-      # sus URLs reales de Cloud Run. No se inventa una URL de producción.
-      - name: Desplegar a Cloud Run
-        run: |
-          gcloud run deploy "${{ env.SERVICE }}" \
-            --image="${{ steps.imagen.outputs.imagen }}" \
-            --project="${{ vars.GCP_PROJECT_ID }}" \
-            --region="${{ env.REGION }}" \
-            --platform=managed \
-            --allow-unauthenticated \
-            --min-instances=0 \
-            --max-instances=2 \
-            --service-account="25798898664-compute@developer.gserviceaccount.com" \
-            --set-env-vars="CAMEIA_PERFIL_URL=http://cameia-perfil:8080,CAMEIA_CUENTAS_URL=http://cameia-cuentas:8080"
-
-      - name: URL del servicio desplegado
-        run: gcloud run services describe "${{ env.SERVICE }}" --project="${{ vars.GCP_PROJECT_ID }}" --region="${{ env.REGION }}" --format="value(status.url)"
+  # Nombre de servicio distinto al de staging: sin esto, cada push a develop/main se
+  # pisaría el despliegue del otro. "-prod" es provisional hasta que exista un
+  # ambiente de producción real (proyecto/VPC separados de cameia-staging).
+  produccion:
+    name: Producción (main)
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/desplegar-servicio.yml
+    with:
+      ambiente: production
+      servicio: cameia-gateway-prod
+      min_instances: 0
