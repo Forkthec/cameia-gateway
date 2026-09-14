@@ -36,7 +36,11 @@ spring:
                 - Path=/api/v1/profiles/**
 
             - id: cameia-entrevista
-              uri: ${CAMEIA_ENTREVISTA_URL}
+              # Sin valor por defecto hasta el 14-sep-2026: cameia-entrevista sigue bloqueada
+              # (puerto y GOOGLE_GENAI_API_KEY pendientes). Mismo patrón que voz/auditoría de
+              # abajo: cae a un host inexistente y responde 503 en vez de impedir que el
+              # Gateway arranque. Confirmado por Juan Vela (CM-153).
+              uri: ${CAMEIA_ENTREVISTA_URL:http://cameia-entrevista:8080}
               predicates:
                 - Path=/api/v1/interviews/**
 
@@ -84,7 +88,9 @@ spring:
             response-timeout: ${GATEWAY_TIMEOUT_MS:30000}ms
 
 server:
-  port: ${SERVER_PORT:8080}
+  # Cloud Run inyecta PORT; Docker Compose local usa SERVER_PORT. Mismo patrón que
+  # cameia-perfil (application.yml). CM-153.
+  port: ${PORT:${SERVER_PORT:8080}}
 
 # ── Actuator ──────────────────────────────────────────────────────────────
 management:
