@@ -90,37 +90,22 @@ jobs:
       - name: URL del servicio desplegado
         run: gcloud run services describe "${{ env.SERVICE }}" --project="${{ vars.GCP_PROJECT_ID }}" --region="${{ env.REGION }}" --format="value(status.url)"
 
-  # No existe todavía un proyecto/VPC de producción separado de staging (mismo
-  # cameia-e245f, misma cameia-staging por ahora) — gateway no usa Cloud SQL ni
-  # RabbitMQ, así que no depende de esa separación para funcionar, pero SÍ necesita un
-  # Cloud Run Service con nombre distinto al de staging: si ambos jobs desplegaran sobre
-  # "cameia-gateway", cada push a develop pisaría lo que main acababa de publicar y
-  # viceversa. "-prod" es un nombre provisional, no una decisión de arquitectura — se
-  # revisa cuando exista un ambiente de producción real separado del de staging.
+  # Nombre de servicio distinto al de staging: sin esto, cada push a develop/main se
+  # pisaría el despliegue del otro. "-prod" es provisional hasta que exista un
+  # ambiente de producción real (proyecto/VPC separados de cameia-staging).
   desplegar-produccion:
     name: Build, publicar imagen y desplegar a Cloud Run (producción)
-    # Solo corre cuando el push aterriza en main — y a main solo se llega fusionando un
-    # PR (ver comentario de "on:" arriba), nunca por push directo.
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    # Environment "production" de GitHub: pausa el job hasta que alguien del equipo
-    # cameia-devops lo apruebe (mismo patrón que cameia-web) — la separación real entre
-    # "se fusionó a main" y "ya se desplegó de verdad" vive acá, no en el trigger.
+    # Pausa el job hasta que cameia-devops lo apruebe (mismo Environment que cameia-web).
     environment: production
     env:
-      # Nombre de servicio distinto al de staging ("cameia-gateway") — ver el
-      # comentario de arriba del job: evita que un job le pise el despliegue al otro.
       SERVICE_PROD: cameia-gateway-prod
     steps:
-      # Trae el código del commit que llegó a main — idéntico al paso de staging,
-      # nada que cambie entre ambientes acá.
       - name: Checkout
         uses: actions/checkout@v7
 
-      # Misma cuenta de servicio compartida (github-action-cameia-backend) y mismo
-      # mecanismo WIF que el job de staging — el detalle completo de por qué está en el
-      # comentario de ese paso, arriba en este mismo archivo. No hay una identidad de
-      # despliegue distinta para producción: es la misma, con permisos ya mínimos.
+      # Misma cuenta compartida y mismo WIF que el job de staging (ver ese paso arriba).
       - name: Autenticar en GCP (WIF)
         uses: google-github-actions/auth@v2
         with:
@@ -128,17 +113,13 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
 
-      # Deja el binario "gcloud" listo para usar, ya con la sesión del paso anterior.
       - name: Configurar gcloud
         uses: google-github-actions/setup-gcloud@v2
 
-      # Sin este paso, "docker push" de más abajo no sabe autenticarse contra
-      # Artifact Registry y falla con 401/403.
       - name: Autenticar Docker contra Artifact Registry
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
-      # Mismo tag corto (7 caracteres del SHA) que staging — la convención de nombre de
-      # imagen de la guía DevOps no distingue por ambiente, solo por componente y commit.
+      # Mismo tag corto (7 caracteres del SHA) que staging.
       - name: Calcular tag de imagen
         id: imagen
         run: |
@@ -146,24 +127,14 @@ jobs:
           IMAGEN="${{ env.REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ env.AR_REPO }}/${{ env.SERVICE }}:${SHA_CORTO}"
           echo "imagen=${IMAGEN}" >> "$GITHUB_OUTPUT"
 
-      # Reconstruye la imagen desde el mismo Dockerfile — a propósito no se reutiliza la
-      # imagen ya construida en staging: el tag de imagen es por SHA de commit, y el SHA
-      # que llega a main (el del merge commit de la promoción) es distinto al que se
-      # construyó en develop, así que igual haría falta un build nuevo.
       - name: Build de la imagen
         run: docker build -t "${{ steps.imagen.outputs.imagen }}" .
 
-      # Publica la imagen de producción en el mismo repositorio de Artifact Registry que
-      # staging (un solo "cameia", ya aprovisionado por Terraform) — se distinguen por
-      # tag, no por repositorio separado.
       - name: Publicar imagen en Artifact Registry
         run: docker push "${{ steps.imagen.outputs.imagen }}"
 
-      # Mismas variables de marcador temporal que en staging para CAMEIA_PERFIL_URL y
-      # CAMEIA_CUENTAS_URL (ver el comentario completo en el paso equivalente del job de
-      # staging, arriba): Perfil y Cuentas tampoco tienen todavía un despliegue de
-      # producción, así que no hay una URL real que poner aquí sin inventarla. Cambia
-      # solo el nombre del servicio (SERVICE_PROD) frente al paso de staging.
+      # Mismo marcador temporal para CAMEIA_PERFIL_URL/CAMEIA_CUENTAS_URL que en
+      # staging (ver ese paso arriba): tampoco tienen despliegue de producción todavía.
       - name: Desplegar a Cloud Run
         run: |
           gcloud run deploy "${{ env.SERVICE_PROD }}" \
@@ -177,8 +148,5 @@ jobs:
             --service-account="25798898664-compute@developer.gserviceaccount.com" \
             --set-env-vars="CAMEIA_PERFIL_URL=http://cameia-perfil:8080,CAMEIA_CUENTAS_URL=http://cameia-cuentas:8080"
 
-      # Imprime la URL real en el log del job — es la evidencia que se enlaza en el PR y
-      # en Jira (CLAUDE.md raíz §9): no alcanza con decir "se desplegó", hace falta el
-      # artefacto real.
       - name: URL del servicio desplegado
         run: gcloud run services describe "${{ env.SERVICE_PROD }}" --project="${{ vars.GCP_PROJECT_ID }}" --region="${{ env.REGION }}" --format="value(status.url)"
