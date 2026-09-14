@@ -1,8 +1,10 @@
 name: Build, publicar imagen y desplegar a Cloud Run
 
-# Workflow reutilizable: los 8 pasos son los mismos para staging y producción, solo
-# cambian el Environment y el nombre del Cloud Run Service. Lo llama
-# despliegue-continuo.yml una vez por ambiente (CM-156).
+# Workflow reutilizable que construye la imagen desde el código y la despliega. Lo
+# llama despliegue-continuo.yml solo para staging (CM-156) — producción no reconstruye,
+# promueve por digest la misma imagen que este workflow ya publicó (ver ese job).
+# Queda parametrizado por ambiente/servicio por si en el futuro hace falta otro caso
+# que sí necesite construir desde cero (ej. un ambiente de prueba nuevo).
 on:
   workflow_call:
     inputs:
