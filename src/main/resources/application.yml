@@ -84,7 +84,9 @@ spring:
             response-timeout: ${GATEWAY_TIMEOUT_MS:30000}ms
 
 server:
-  port: ${SERVER_PORT:8080}
+  # Cloud Run inyecta PORT y exige que el proceso escuche ahí. Sin PORT se usa
+  # SERVER_PORT, y sin ninguno de los dos, 8080.
+  port: ${PORT:${SERVER_PORT:8080}}
 
 # ── Actuator ──────────────────────────────────────────────────────────────
 management:

@@ -34,9 +34,11 @@ services:
       GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/firebase-key
       # Nombre de contenedor de perfil dentro de cameia-net — no configurable por entorno.
       CAMEIA_PERFIL_URL: http://cameia-perfil-app:8082
-      # Los demás downstream aún no tienen servicio app; se resuelven cuando existan.
-      CAMEIA_CUENTAS_URL: ${CAMEIA_CUENTAS_URL:-http://cameia-cuentas-app:8081}
-      CAMEIA_ENTREVISTA_URL: ${CAMEIA_ENTREVISTA_URL:-http://cameia-entrevista-app:8083}
+      # Dentro de cameia-net se usa el nombre de contenedor y el puerto INTERNO del
+      # contenedor, no el publicado en el host (entrevista publica 8083, pero escucha en 8080).
+      # Requiere que cuentas y entrevista declaren cameia-net como red externa en su compose.
+      CAMEIA_CUENTAS_URL: ${CAMEIA_CUENTAS_URL:-http://cameia-cuentas:8081}
+      CAMEIA_ENTREVISTA_URL: ${CAMEIA_ENTREVISTA_URL:-http://cameia-entrevista:8080}
       GATEWAY_CORS_ALLOWED_ORIGIN: ${GATEWAY_CORS_ALLOWED_ORIGIN:-http://localhost:5173}
       GATEWAY_TIMEOUT_MS: ${GATEWAY_TIMEOUT_MS:-30000}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
