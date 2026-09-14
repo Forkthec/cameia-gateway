@@ -1,12 +1,13 @@
-name: CD # despliegue a Cloud Run (staging desde develop)
+name: CD # despliegue a Cloud Run — staging desde develop, producción desde main
 
-# CM-156: primer microservicio backend con CD real. Alcance reducido a propósito: solo
-# staging, solo gateway (Perfil/Cuentas/producción quedan para tareas futuras del mismo
-# tamaño — ver CM-156 en Jira). Corre solo en push a develop, nunca en pull_request, para
-# no gastar minutos de Actions ni desplegar código sin fusionar.
+# CM-156. `main` no admite push directo (CLAUDE.md raíz §3): la única forma de que un
+# commit llegue ahí es fusionando un PR, así que "push a main" y "se fusionó el PR de
+# promoción a main" son el mismo evento. Mismo patrón que cameia-web
+# (despliegue-continuo.yml): un solo trigger de push para ambas ramas, un job por
+# ambiente, cada uno con su propia condición de `github.ref`.
 on:
   push:
-    branches: [develop]
+    branches: [develop, main]
 
 concurrency:
   group: cd-gateway-${{ github.ref }}
@@ -26,6 +27,7 @@ env:
 jobs:
   desplegar-staging:
     name: Build, publicar imagen y desplegar a Cloud Run (staging)
+    if: github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
     environment: staging
     steps:
@@ -87,3 +89,63 @@ jobs:
 
       - name: URL del servicio desplegado
         run: gcloud run services describe "${{ env.SERVICE }}" --project="${{ vars.GCP_PROJECT_ID }}" --region="${{ env.REGION }}" --format="value(status.url)"
+
+  # No existe todavía un proyecto/VPC de producción separado de staging (mismo
+  # cameia-e245f, misma cameia-staging por ahora) — gateway no usa Cloud SQL ni
+  # RabbitMQ, así que no depende de esa separación para funcionar, pero SÍ necesita un
+  # Cloud Run Service con nombre distinto al de staging: si ambos jobs desplegaran sobre
+  # "cameia-gateway", cada push a develop pisaría lo que main acababa de publicar y
+  # viceversa. "-prod" es un nombre provisional, no una decisión de arquitectura — se
+  # revisa cuando exista un ambiente de producción real separado del de staging.
+  desplegar-produccion:
+    name: Build, publicar imagen y desplegar a Cloud Run (producción)
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      SERVICE_PROD: cameia-gateway-prod
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Autenticar en GCP (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Configurar gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Autenticar Docker contra Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Calcular tag de imagen
+        id: imagen
+        run: |
+          SHA_CORTO="${GITHUB_SHA::7}"
+          IMAGEN="${{ env.REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ env.AR_REPO }}/${{ env.SERVICE }}:${SHA_CORTO}"
+          echo "imagen=${IMAGEN}" >> "$GITHUB_OUTPUT"
+
+      - name: Build de la imagen
+        run: docker build -t "${{ steps.imagen.outputs.imagen }}" .
+
+      - name: Publicar imagen en Artifact Registry
+        run: docker push "${{ steps.imagen.outputs.imagen }}"
+
+      - name: Desplegar a Cloud Run
+        run: |
+          gcloud run deploy "${{ env.SERVICE_PROD }}" \
+            --image="${{ steps.imagen.outputs.imagen }}" \
+            --project="${{ vars.GCP_PROJECT_ID }}" \
+            --region="${{ env.REGION }}" \
+            --platform=managed \
+            --allow-unauthenticated \
+            --min-instances=0 \
+            --max-instances=2 \
+            --service-account="25798898664-compute@developer.gserviceaccount.com" \
+            --set-env-vars="CAMEIA_PERFIL_URL=http://cameia-perfil:8080,CAMEIA_CUENTAS_URL=http://cameia-cuentas:8080"
+
+      - name: URL del servicio desplegado
+        run: gcloud run services describe "${{ env.SERVICE_PROD }}" --project="${{ vars.GCP_PROJECT_ID }}" --region="${{ env.REGION }}" --format="value(status.url)"
