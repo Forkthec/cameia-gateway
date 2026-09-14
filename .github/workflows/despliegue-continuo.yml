@@ -2,9 +2,13 @@ name: CD # despliegue a Cloud Run — staging desde develop, producción desde m
 
 # CM-156. `main` no admite push directo (CLAUDE.md raíz §3): la única forma de que un
 # commit llegue ahí es fusionando un PR, así que "push a main" y "se fusionó el PR de
-# promoción a main" son el mismo evento. Los 8 pasos de build+push+deploy están en
-# desplegar-servicio.yml (workflow reutilizable) para no repetirlos por ambiente; acá
-# solo se decide cuándo corre cada uno y con qué parámetros.
+# promoción a main" son el mismo evento.
+#
+# Staging construye la imagen desde el código y la publica (desplegar-servicio.yml,
+# workflow reutilizable). Producción NO reconstruye: la guía DevOps del sprint lo exige
+# explícito ("producción debe desplegar exactamente los mismos digest, nunca reconstruir
+# el código entre ambientes") — así que el job de abajo busca el digest inmutable de la
+# imagen que YA se construyó y probó en staging, y despliega exactamente esa.
 on:
   push:
     branches: [develop, main]
@@ -13,8 +17,6 @@ concurrency:
   group: cd-gateway-${{ github.ref }}
   cancel-in-progress: false # nunca cancelar un deploy a medias
 
-# id-token: write tiene que declararse acá, en el workflow que llama — GitHub no deja
-# que un workflow reutilizado pida más permiso del que ya tiene el que lo invoca.
 permissions:
   contents: read
   id-token: write
@@ -35,8 +37,62 @@ jobs:
   produccion:
     name: Producción (main)
     if: github.ref == 'refs/heads/main'
-    uses: ./.github/workflows/desplegar-servicio.yml
-    with:
-      ambiente: production
-      servicio: cameia-gateway-prod
-      min_instances: 0
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      SERVICE_PROD: cameia-gateway-prod
+    steps:
+      # fetch-depth 0: hace falta el historial completo para leer los dos padres del
+      # commit de fusión (ver paso siguiente), no solo el último commit.
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # El PR de promoción develop→main se fusiona con "Merge commit" (CLAUDE.md raíz
+      # §3), nunca squash — así que el commit que llega a main tiene dos padres: el
+      # main anterior, y la punta de develop que ya se construyó y probó en staging
+      # (job de arriba). Ese segundo padre es el commit cuyo SHA corto ya es el tag de
+      # la imagen que hay que promover, no reconstruir.
+      - name: Resolver el commit de develop que se promueve
+        id: origen
+        run: |
+          SHA_DEVELOP=$(git rev-parse HEAD^2)
+          echo "sha_corto=${SHA_DEVELOP::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Autenticar en GCP (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Configurar gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      # Digest inmutable (sha256:...) de la imagen que el job de staging ya publicó
+      # con ese mismo SHA de commit como tag — no se descarga ni se reconstruye nada,
+      # solo se consulta cuál es. roles/artifactregistry.writer ya incluye lectura.
+      - name: Resolver el digest de la imagen ya probada en staging
+        id: imagen
+        run: |
+          TAG="us-east1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/cameia/cameia-gateway:${{ steps.origen.outputs.sha_corto }}"
+          DIGEST=$(gcloud artifacts docker images describe "$TAG" --format="value(image_summary.digest)")
+          echo "imagen=us-east1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/cameia/cameia-gateway@${DIGEST}" >> "$GITHUB_OUTPUT"
+
+      # Mismo marcador temporal para CAMEIA_PERFIL_URL/CAMEIA_CUENTAS_URL que en
+      # staging: Perfil y Cuentas tampoco tienen despliegue de producción todavía.
+      - name: Desplegar a Cloud Run (mismo digest de staging, sin reconstruir)
+        run: |
+          gcloud run deploy "${{ env.SERVICE_PROD }}" \
+            --image="${{ steps.imagen.outputs.imagen }}" \
+            --project="${{ vars.GCP_PROJECT_ID }}" \
+            --region=us-east1 \
+            --platform=managed \
+            --min-instances=0 \
+            --max-instances=2 \
+            --service-account="25798898664-compute@developer.gserviceaccount.com" \
+            --set-env-vars="CAMEIA_PERFIL_URL=http://cameia-perfil:8080,CAMEIA_CUENTAS_URL=http://cameia-cuentas:8080"
+
+      - name: URL del servicio desplegado
+        run: gcloud run services describe "${{ env.SERVICE_PROD }}" --project="${{ vars.GCP_PROJECT_ID }}" --region=us-east1 --format="value(status.url)"
