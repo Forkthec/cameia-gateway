@@ -1,10 +1,10 @@
-package co.edu.unicauca.cameia.gateway;
+package tech.cameia.gateway;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 
-import co.edu.unicauca.cameia.gateway.config.GatewayProperties;
+import tech.cameia.gateway.config.GatewayProperties;
 
 @SpringBootApplication
 @EnableConfigurationProperties(GatewayProperties.class)

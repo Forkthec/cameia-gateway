@@ -1,4 +1,4 @@
-package co.edu.unicauca.cameia.gateway.config;
+package tech.cameia.gateway.config;
 
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.firebase.FirebaseApp;

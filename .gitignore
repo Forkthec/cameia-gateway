@@ -3,6 +3,7 @@ gitignore
 build/
 target/
 out/
+firebase/
 
 .idea/
 *.iml

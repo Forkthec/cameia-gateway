@@ -100,5 +100,5 @@ management:
 logging:
   level:
     root: ${LOG_LEVEL:INFO}
-    co.edu.unicauca.cameia.gateway: DEBUG
+    tech.cameia.gateway: DEBUG
     org.springframework.cloud.gateway: INFO

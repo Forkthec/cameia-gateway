@@ -1,4 +1,4 @@
-package co.edu.unicauca.cameia.gateway.arch;
+package tech.cameia.gateway.arch;
 
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
@@ -6,23 +6,23 @@ import com.tngtech.archunit.lang.ArchRule;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
-@AnalyzeClasses(packages = "co.edu.unicauca.cameia.gateway")
+@AnalyzeClasses(packages = "tech.cameia.gateway")
 class GatewayArchTest {
 
     @ArchTest
-    static final ArchRule sinJpa =
+    static final ArchRule noJpa =
             noClasses()
                     .should().accessClassesThat().resideInAPackage("jakarta.persistence..")
                     .because("El gateway no tiene persistencia — ningún paquete puede importar JPA");
 
     @ArchTest
-    static final ArchRule sinSpringDataJpa =
+    static final ArchRule noSpringDataJpa =
             noClasses()
                     .should().accessClassesThat().resideInAPackage("org.springframework.data.jpa..")
                     .because("El gateway no usa Spring Data JPA");
 
     @ArchTest
-    static final ArchRule filterNoImportaConfig =
+    static final ArchRule filterDoesNotImportConfig =
             noClasses()
                     .that().resideInAPackage("..filter..")
                     .should().accessClassesThat().resideInAPackage("..config..")
