@@ -131,17 +131,17 @@ confirma que `GET /actuator/health` sigue respondiendo `200` sin token.
 
 ## Bloque 7 — Documentación
 
-- [ ] T-38 · Actualizar la tabla de brechas de `AGENTS.md` §6.5: salen las cerradas por este spec y queda solo la del token OIDC. Quitar `GatewayProperties` de la tabla de componentes de §4 (plan §5)
-- [ ] T-39 · Actualizar `docs/COMO-FUNCIONA.md`: las secciones 3, 5.3 y 7 describen defectos que este spec corrige. Deja el documento contando el estado real, no el histórico (plan §5)
-- [ ] T-40 · Añadir una nota en `specs/CM-104-base-tecnica/tasks.md` junto a las dos casillas incorrectas (`application-local.yml` y el campo `timeoutMs`), apuntando a este spec. **No desmarcar las casillas**: la nota conserva el historial y dice la verdad (REQ-14, REQ-15)
-- [ ] T-41 · Rellenar la bitácora de IA del mismo día, según `AGENTS.md` §10
+- [x] T-38 · Actualizar la tabla de brechas de `AGENTS.md` §6.5: salen las cerradas por este spec y queda solo la del token OIDC. Quitar `GatewayProperties` de la tabla de componentes de §4 (plan §5)
+- [x] T-39 · Actualizar `docs/COMO-FUNCIONA.md`: las secciones 3, 5.3 y 7 describen defectos que este spec corrige. Deja el documento contando el estado real, no el histórico (plan §5) — *nota del 14/09/2026: no solo §3, §5.3 y §7 estaban desactualizadas; también el resumen inicial, el mapa de clases, los diagramas, §4 (Docker), §5.2, §5.4 y §8. Se reescribió el documento entero y §7 pasó a listar los hallazgos abiertos*
+- [x] T-40 · Añadir una nota en `specs/CM-104-base-tecnica/tasks.md` junto a las dos casillas incorrectas (`application-local.yml` y el campo `timeoutMs`), apuntando a este spec. **No desmarcar las casillas**: la nota conserva el historial y dice la verdad (REQ-14, REQ-15)
+- [x] T-41 · Rellenar la bitácora de IA del mismo día, según `AGENTS.md` §10 — *nota del 14/09/2026: `AGENTS.md` §10 cambió de un Excel a un Markdown por spec. Se creó `..\..\Entregables\14092026_BitacoraIA_Codigo_E2.md`, sección `Bitacora_Codigo_Vela`; la carpeta `Entregables` no existía en este equipo y se creó con el archivo*
 
 ---
 
 ## Bloque 8 — Cierre
 
-- [ ] T-42 · Revisar el diff completo con `git diff develop...HEAD` y confirmar: ningún secreto real, ninguna URL de downstream escrita en el código, y el total por debajo de las 1000 líneas que fija `AGENTS.md`
-- [ ] T-43 · Recorrer el DoD del spec §6 y marcar cada casilla con la evidencia real (salida de comando o número de prueba). Si algo no pasa, no se marca
+- [x] T-42 · Revisar el diff completo con `git diff develop...HEAD` y confirmar: ningún secreto real, ninguna URL de downstream escrita en el código, y el total por debajo de las 1000 líneas que fija `AGENTS.md` — *nota del 14/09/2026: el `develop` local estaba desactualizado y mezclaba trabajo ya integrado en el PR #31, así que se revisó contra `origin/develop`. Sin secretos; sin URLs en `src/main/java`; las únicas URLs añadidas son `localhost` en el healthcheck y en pruebas. Tamaño: 18 archivos, +826/−237 (1063 si se suman las borradas; 342 son la reescritura de `docs/COMO-FUNCIONA.md`). `AGENTS.md` ya no fija el límite de 1000 líneas: queda a criterio de quien revise el PR*
+- [x] T-43 · Recorrer el DoD del spec §6 y marcar cada casilla con la evidencia real (salida de comando o número de prueba). Si algo no pasa, no se marca
 - [ ] T-44 · Abrir el PR hacia `develop` con el título `CM-104 | fix(gateway): endurecer identidad, errores y empaquetado [IA-ASISTIDO]`, y avisar en la descripción a los equipos de Cuentas y Entrevista de que ya reciben `X-User-Email`, `X-User-Roles` y `X-Request-Id` (`GW-TBD-07`)
 
 ---

@@ -98,7 +98,7 @@ El modelo completo de seguridad, que es la razón de existir de este componente,
 
 ```text
 tech.cameia.gateway
-├── config          FirebaseConfig, GatewayProperties (beans de arranque)
+├── config          FirebaseConfig (bean de arranque)
 ├── filter          GlobalFilter — auth de entrada, identidad y firma OIDC de salida
 └── exception       GlobalErrorHandler — formato JSON de errores HTTP
 ```
@@ -124,9 +124,10 @@ exception      independiente
 |---|---|---|
 | `GatewayApplication` | raíz | `@SpringBootApplication`, punto de entrada |
 | `FirebaseConfig` | `config` | Inicializa `FirebaseApp` en `@PostConstruct`; falla en arranque si las credenciales son inválidas (fail-fast) |
-| `GatewayProperties` | `config` | `@ConfigurationProperties("gateway")` — `corsAllowedOrigin` (String) y `timeout` (`Duration`). **Hoy nada se enlaza a esta clase**: `application.yml` lee las variables de entorno directamente. Está declarada y validada pero inerte |
-| `FirebaseAuthGlobalFilter` | `filter` | Valida Bearer token, extrae UID y plan, propaga headers, elimina `Authorization` |
-| `GlobalErrorHandler` | `exception` | Formatea el error como `{"code":"...","message":"..."}`. Hoy mapea todo lo que no sea `ResponseStatusException` a 500 y copia el mensaje de la excepción al cuerpo |
+| `FirebaseAuthGlobalFilter` | `filter` | Resuelve `X-Request-Id` y lo devuelve en la respuesta. Caso A: valida el Bearer token (`401` si falta, está vacío o Firebase lo rechaza), borra los `X-User-*` del cliente, emite `X-User-Id`, `X-User-Email`, `X-User-Roles` y `X-User-Plan` con `set` y elimina `Authorization`. Caso B: borra los `X-User-*` del cliente |
+| `GlobalErrorHandler` | `exception` | Formatea el error como `{"code":"...","message":"..."}` desde un catálogo cerrado (`AUTH_REQUIRED`, `NOT_FOUND`, `BAD_GATEWAY`, `SERVICE_UNAVAILABLE`, `GATEWAY_TIMEOUT`, `INTERNAL_ERROR`). Nunca copia el mensaje de la excepción: la registra en el log con su `X-Request-Id` |
+
+> `GatewayProperties` se eliminó en CM-104-correcciones (REQ-14): nada la leía. La configuración tipada vuelve, si hace falta, con el spec de OIDC.
 
 **No se crea ninguna clase que no esté en esta tabla o en el spec aprobado de la HU.** El componente de firma OIDC de §6.3 todavía no existe: entra con su propia spec, no improvisado.
 
@@ -150,6 +151,8 @@ La ruta de cuentas es `/api/v1/users/**`, no `/api/v1/accounts/**`: el valor que
 `/webhooks/wompi` es Caso B, no "sin seguridad": **sí lleva token OIDC** hacia cameia-cuentas. Lo único que no se valida es un token de Firebase, porque Wompi no es un usuario del sistema. Los endpoints de Actuator no son rutas del gateway: los atiende el propio servicio y por eso no hay paso OIDC.
 
 Añadir una ruta nueva **no requiere código Java**, solo editar `application.yml` y abrir PR. Lo que sí requiere es declarar en la spec si es Caso A o Caso B.
+
+**Excepción: abrir una ruta al público sí exige recompilar.** Las rutas de Caso B viven en la constante `PUBLIC_PATHS` del filtro, no en el YAML. Una ruta nueva que no se añada ahí queda protegida por omisión: nunca se abre sola. La comparación es de texto exacto, sin comodines.
 
 ---
 
@@ -177,7 +180,7 @@ La llamada a `FirebaseAuth.verifyIdToken()` es bloqueante, así que se ejecuta e
 4. **Eliminar** cualquier header `X-User-*` que venga del cliente: no hay usuario autenticado y el downstream no debe creer que lo hay.
 5. Reenviar la petición.
 
-Hoy las rutas de Caso B viven en la constante `PUBLIC_PATHS` del filtro (`/webhooks/wompi`, `/actuator/health`, `/actuator/info`).
+Hoy las rutas de Caso B viven en la constante `PUBLIC_PATHS` del filtro, y la única es `/webhooks/wompi`. Actuator no va en esa lista: lo atiende su propio `HandlerMapping` (orden `-100`) antes que las rutas del Gateway (orden `1`), así que el filtro nunca lo ve y todo endpoint de Actuator expuesto es público (`GW-TBD-11`).
 
 > **La única diferencia entre el Caso A y el Caso B es si el gateway valida un token de Firebase en la entrada. El paso OIDC hacia el microservicio ocurre en ambos casos, sin excepciones.**
 
@@ -217,16 +220,11 @@ Los microservicios reciben solo lo necesario para su autorización de negocio, *
 
 ### 6.5 Estado actual frente a este modelo
 
-§6 describe el objetivo aprobado. CM-104 y CM-113 **todavía no lo cumplen**. No afirmar como implementado nada de esta lista, y no cerrar una brecha sin su spec y sus pruebas:
+§6 describe el objetivo aprobado. `CM-104-correcciones` cerró el saneamiento de `X-User-*`, el contrato completo de §6.4, CORS, el `401` ante un Bearer vacío o malformado y la traducción de fallos del downstream a `502`/`503`/`504`. Queda **una brecha**. No afirmarla como implementada, y no cerrarla sin su spec y sus pruebas:
 
 | Brecha | Dónde |
 |---|---|
-| El paso OIDC saliente no existe: ninguna petición hacia un microservicio lleva token de Google | falta el componente de §6.3 |
-| El filtro no sanea los `X-User-*` entrantes, ni en Caso A ni en Caso B | `FirebaseAuthGlobalFilter.propagateClaims` usa `header()`, que agrega |
-| Faltan `X-User-Email`, `X-User-Roles` y `X-Request-Id` del contrato | ídem |
-| CORS admite `X-User-Id` y `X-User-Plan` como headers de petición | `application.yml`, `globalcors.allowedHeaders` |
-| Un Bearer vacío o malformado lanza `IllegalArgumentException`, no `FirebaseAuthException`, y termina en `500` en vez de `401` | `onErrorResume` solo captura `FirebaseAuthException` |
-| Un fallo del downstream responde `500` con el mensaje de la excepción en el cuerpo, en vez de `502`/`503`/`504` | `GlobalErrorHandler.resolveStatus` |
+| El paso OIDC saliente no existe: ninguna petición hacia un microservicio lleva token de Google | falta el componente de §6.3 (`specs/CM-104-correcciones-OIDC/`) |
 
 ---
 
@@ -273,7 +271,7 @@ Cómo ejecutar sin instalar Java ni Maven:
 docker compose run --rm verify
 ```
 
-Resultado esperado: `BUILD SUCCESS`. Hoy son 10 pruebas; el número sube a medida que se cubran las brechas de §6.5, y ninguna existente debe ponerse roja al hacerlo.
+Resultado esperado: `BUILD SUCCESS`. Hoy son 27 pruebas; el número sube a medida que se cubran las brechas de §6.5, y ninguna existente debe ponerse roja al hacerlo.
 
 ---
 
@@ -311,12 +309,13 @@ El archivo de clave es un recurso **solo de desarrollo local**. En Cloud Run las
 
 ---
 
-## 10. Bitácora de IA — OBLIGATORIA
+## 10. Bitácora de IA por Spec — OBLIGATORIA
 
-`..\..\Entregables\07092026_02_BitacoraIA_Codigo_E2.xlsx`, hoja **`Bitacora_Codigo_E2_Sofia`**.
+`..\..\Entregables\<fecha>_BitacoraIA_Codigo_E2.md`, hoja **`Bitacora_Codigo_Vela`**.
 
-**Se llena el mismo día.** Todo PR con código asistido por IA lleva `[IA-ASISTIDO]` en el título.
-
+Incluye los siguientes items:
+- Prompts más importantes en Toma de decisiones con ctiretio humano
+- Resumen de lo que se hizo
 ---
 
 ## 11. Título de PR — formato obligatorio

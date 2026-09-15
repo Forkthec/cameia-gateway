@@ -406,19 +406,22 @@ Ninguno se cierra escribiendo código.
 
 ## 6. Criterio de terminado (DoD)
 
-- [ ] `docker compose run --rm verify` en verde, con las pruebas nuevas incluidas
-- [ ] `docker compose up` levanta solo el Gateway, no el servicio `verify`
-- [ ] Un cliente que envía `X-User-Id` propio a una ruta protegida no logra que ese valor llegue al microservicio (prueba de contrato)
-- [ ] Un cliente que envía `X-User-Id` propio a `/webhooks/wompi` no logra que ese valor llegue a Cuentas (prueba de contrato)
-- [ ] Token válido → el microservicio recibe `X-User-Id`, `X-User-Email`, `X-User-Roles` y `X-Request-Id` (prueba de contrato)
-- [ ] `Authorization: Bearer ` (vacío) → `401`, no `500` (prueba de contrato)
-- [ ] Microservicio caído → `503`; microservicio lento → `504` (pruebas de contrato)
-- [ ] Ningún cuerpo de error contiene el mensaje de una excepción (prueba de contrato)
-- [ ] `X-Request-Id` ausente en la entrada → el microservicio lo recibe generado (prueba de contrato)
-- [ ] CORS no admite cabeceras `X-User-*`
-- [ ] El contenedor no corre como `root` y la imagen declara `HEALTHCHECK`
-- [ ] `AGENTS.md` §6.5 actualizado: las brechas cerradas salen de la tabla
-- [ ] `docs/COMO-FUNCIONA.md` actualizado con el estado real tras el cambio
-- [ ] Ningún secreto real en el diff del PR
-- [ ] Bitácora IA rellenada el mismo día
-- [ ] Título del PR: `CM-104 | fix(gateway): endurecer identidad, errores y empaquetado [IA-ASISTIDO]`
+> Evidencia registrada el 14/09/2026 (T-43). Las pruebas citadas están en `FirebaseAuthGlobalFilterTest`
+> salvo que se indique `GatewayErrorMappingTest`.
+
+- [x] `docker compose run --rm verify` en verde, con las pruebas nuevas incluidas — `Tests run: 27, Failures: 0, Errors: 0`, `BUILD SUCCESS` (última corrida tras el commit `c0f834e`; después solo cambió documentación)
+- [x] `docker compose up` levanta solo el Gateway, no el servicio `verify` — `docker compose up --build -d` + `docker compose ps -a` → solo `app running`; `docker compose config --services` → `app`
+- [x] Un cliente que envía `X-User-Id` propio a una ruta protegida no logra que ese valor llegue al microservicio (prueba de contrato) — `clientIdentityHeader_isReplacedByTokenUid`
+- [x] Un cliente que envía `X-User-Id` propio a `/webhooks/wompi` no logra que ese valor llegue a Cuentas (prueba de contrato) — `wompiWebhook_withoutToken_reachesDownstreamWithoutIdentityHeaders`
+- [x] Token válido → el microservicio recibe `X-User-Id`, `X-User-Email`, `X-User-Roles` y `X-Request-Id` (prueba de contrato) — `validTokenWithPlan_propagatesHeadersToDownstream`
+- [x] `Authorization: Bearer ` (vacío) → `401`, no `500` (prueba de contrato) — `emptyBearerToken_returns401WithoutReachingDownstream`
+- [x] Microservicio caído → `503`; microservicio lento → `504` (pruebas de contrato) — `GatewayErrorMappingTest.unreachableDownstream_returns503` y `unresponsiveDownstream_returns504`
+- [x] Ningún cuerpo de error contiene el mensaje de una excepción (prueba de contrato) — `GatewayErrorMappingTest.errorBodies_doNotLeakInternalDetail`
+- [x] `X-Request-Id` ausente en la entrada → el microservicio lo recibe generado (prueba de contrato) — `missingRequestId_gatewayGeneratesOneForDownstream`
+- [x] CORS no admite cabeceras `X-User-*` — comprobado con el gateway corriendo (sin prueba automática): preflight con `X-User-Id` → `403 Forbidden`; con `X-Request-Id` → `200` y `Access-Control-Allow-Headers: X-Request-Id`
+- [x] El contenedor no corre como `root` y la imagen declara `HEALTHCHECK` — `docker exec … whoami` → `cameia`; `docker inspect` → `user=cameia` y healthcheck `wget … /actuator/health`; `docker ps` → `(healthy)`
+- [x] `AGENTS.md` §6.5 actualizado: las brechas cerradas salen de la tabla — queda solo la del token OIDC (T-38)
+- [x] `docs/COMO-FUNCIONA.md` actualizado con el estado real tras el cambio — reescrito, con hallazgos abiertos en §7 (T-39)
+- [x] Ningún secreto real en el diff del PR — `git diff origin/develop` sin coincidencias de `private_key`, claves privadas, `AIza…`, `client_secret` ni contraseñas; sin URLs en `src/main/java` (T-42)
+- [x] Bitácora IA rellenada el mismo día — `..\..\Entregables\14092026_BitacoraIA_Codigo_E2.md`, sección `Bitacora_Codigo_Vela` (T-41)
+- [ ] Título del PR: `CM-104 | fix(gateway): endurecer identidad, errores y empaquetado [IA-ASISTIDO]` — *pendiente: T-44, la abre Juan Vela*

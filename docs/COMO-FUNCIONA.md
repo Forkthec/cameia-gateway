@@ -3,8 +3,10 @@
 > **Para personas.** Esto describe lo que el código *hace hoy*, no lo que debería hacer.
 > Las reglas que debe seguir quien programa aquí están en [`AGENTS.md`](../AGENTS.md).
 >
-> Escaneado sobre la rama `CM-104-correcciones`, base `cd5b4c0`.
-> Todo lo que se afirma aquí se comprobó leyendo el código o ejecutándolo: suite en verde, 10/10.
+> Actualizado el 14/09/2026 tras `CM-104-correcciones`, rama `CM-104-correcciones-bloque-3`, base `c0f834e`.
+> Todo lo que se afirma aquí se comprobó leyendo el código o ejecutándolo: suite en verde, 27/27.
+> El escaneo original (11/09/2026, base `cd5b4c0`) encontró los defectos que corrigió ese spec;
+> este documento ya no los describe como vigentes.
 
 ---
 
@@ -12,42 +14,48 @@
 
 | Pregunta | Respuesta corta | Dónde |
 |---|---|---|
-| ¿Pide a Google un token para cada petición hacia los microservicios? | 🔴 **No. Ni en rutas públicas ni en privadas.** | [§3](#3-pregunta-1--el-token-oidc-de-google) |
-| ¿Hay healthcheck o perfil propio en Docker? | 🟡 **Healthcheck sí. Perfil `local`, solo de nombre.** | [§4](#4-pregunta-2--docker-healthcheck-y-perfiles) |
+| ¿Pide a Google un token para cada petición hacia los microservicios? | 🔴 **No. Ni en rutas públicas ni en privadas.** Tiene spec propio | [§3](#3-pregunta-1--el-token-oidc-de-google) |
+| ¿Hay healthcheck o perfil propio en Docker? | 🟢 **Sí a los dos.** Healthcheck en la imagen y en Compose; perfil `local` con archivo propio | [§4](#4-pregunta-2--docker-healthcheck-y-perfiles) |
 | ¿Cómo sabe si una ruta exige sesión? | 🟡 **Lista blanca fija en Java, no en el YAML.** | [§5](#5-pregunta-3--enrutamiento-y-la-decisión-de-requiere-sesión) |
 | ¿Implementa rate limit? | 🔴 **No. Y está fuera de alcance por decisión escrita.** | [§6](#6-pregunta-4--rate-limit) |
 
-Dicho en una frase: **el gateway hoy autentica usuarios y enruta, nada más.** Las dos capas que faltan (token hacia los microservicios y límite de tráfico) no están empezadas.
+Dicho en una frase: **el gateway autentica usuarios, sanea y propaga su identidad, traza cada petición y
+traduce los fallos del microservicio a errores honestos.** Faltan dos capas: el token hacia los
+microservicios y el límite de tráfico.
 
 ---
 
 ## 1. El mapa del código
 
-Todo el servicio son **5 clases y 249 líneas de Java**. Casi toda la configuración vive en YAML.
+Todo el servicio son **4 clases y 591 líneas de Java**, buena parte Javadoc. Casi toda la configuración
+vive en YAML.
 
 ```text
 tech.cameia.gateway
 │
-├── GatewayApplication.java ......... 16 líneas  Arranque. Nada más.
+├── GatewayApplication.java ......... 12 líneas  Arranque. Nada más.
 │
 ├── config/
-│   ├── FirebaseConfig.java ......... 47 líneas  Enciende el Admin SDK al arrancar
-│   └── GatewayProperties.java ...... 35 líneas  ⚠️ Declarada pero inerte: nadie la usa
+│   └── FirebaseConfig.java ......... 47 líneas  Enciende el Admin SDK al arrancar
 │
 ├── filter/
-│   └── FirebaseAuthGlobalFilter.java  97 líneas  ⭐ El corazón. Valida token y propaga identidad
+│   └── FirebaseAuthGlobalFilter.java 369 líneas ⭐ El corazón. Token, identidad y X-Request-Id
 │
 └── exception/
-    └── GlobalErrorHandler.java ..... 54 líneas  Da formato JSON a los errores
+    └── GlobalErrorHandler.java .... 163 líneas  Catálogo cerrado de errores
 ```
 
 | Archivo | Qué decide |
 |---|---|
-| `application.yml` | **A dónde** va cada petición (6 rutas), CORS y timeout |
-| `FirebaseAuthGlobalFilter.java` | **Si hace falta** haber iniciado sesión |
+| `application.yml` | **A dónde** va cada petición (6 rutas), CORS, timeout y qué expone Actuator |
+| `application-local.yml` | Lo que cambia en el perfil `local`: hoy, solo el log de coincidencia de rutas |
+| `FirebaseAuthGlobalFilter.java` | **Si hace falta** haber iniciado sesión, qué identidad recibe el microservicio y el `X-Request-Id` |
+| `GlobalErrorHandler.java` | Qué estado y qué cuerpo recibe el cliente cuando algo falla |
 | `docker-compose.yml` | Cómo se levanta en local y cómo se corren las pruebas |
 
-> 💡 **La idea clave del diseño:** el *destino* se declara en YAML, pero la *seguridad* se decide en Java. Son dos archivos distintos que hay que mantener sincronizados a mano. Volvemos a esto en [§5](#5-pregunta-3--enrutamiento-y-la-decisión-de-requiere-sesión).
+> 💡 **La idea clave del diseño:** el *destino* se declara en YAML, pero la *seguridad* se decide en Java.
+> Son dos archivos distintos que hay que mantener sincronizados a mano. Volvemos a esto en
+> [§5](#5-pregunta-3--enrutamiento-y-la-decisión-de-requiere-sesión).
 
 ---
 
@@ -57,22 +65,32 @@ Así se ve hoy una llamada del frontend a un endpoint de perfil:
 
 ```mermaid
 flowchart TD
-    A["cameia-web<br/>GET /api/v1/profiles/me<br/>Authorization: Bearer &lt;token Firebase&gt;"] --> B{"¿Alguna ruta del YAML<br/>coincide con la URL?"}
-    B -->|No| C["404<br/>el filtro nunca corre"]
-    B -->|Sí| D{"¿La URL está en<br/>PUBLIC_PATHS?<br/>(constante en Java)"}
+    A["cameia-web<br/>GET /api/v1/profiles/me<br/>Authorization: Bearer &lt;token Firebase&gt;"] --> ACT{"¿Es /actuator/**?"}
+    ACT -->|Sí| ACTR["Lo responde Actuator<br/>el filtro nunca corre"]
+    ACT -->|No| B{"¿Alguna ruta del YAML<br/>coincide con la URL?"}
+    B -->|No| C["404 NOT_FOUND<br/>el filtro nunca corre"]
+    B -->|Sí| RID["Resuelve X-Request-Id<br/>(el del cliente o uno nuevo)"]
+    RID --> D{"¿La URL está en<br/>PUBLIC_PATHS?<br/>(constante en Java)"}
 
-    D -->|Sí, es pública| E["Pasa tal cual:<br/>no se valida nada,<br/>no se limpia nada"]
-    D -->|No, es privada| F["Verifica el ID Token<br/>con Firebase Admin SDK"]
+    D -->|Sí, es pública| E["No valida token<br/>Borra X-User-* del cliente"]
+    D -->|No, es privada| F{"¿Bearer con token<br/>no vacío?"}
 
-    F -->|Token ausente o inválido| G["401 AUTH_REQUIRED<br/>no llega al microservicio"]
-    F -->|Token válido| H["Añade X-User-Id<br/>Añade X-User-Plan si existe el claim<br/>Borra Authorization"]
+    F -->|No| G["401 AUTH_REQUIRED<br/>no llega al microservicio"]
+    F -->|Sí| V["verifyIdToken<br/>con Firebase Admin SDK"]
+    V -->|Firebase lo rechaza| G
+    V -->|Token válido| H["Borra X-User-* del cliente y Authorization<br/>Emite X-User-Id, Email, Roles, Plan"]
 
     E --> I["cameia-perfil"]
     H --> I
+    I -->|No responde en 30 s| T["504 GATEWAY_TIMEOUT"]
+    I -->|No acepta conexión| U["503 SERVICE_UNAVAILABLE"]
 
     style C fill:#ffe0e0
     style G fill:#ffe0e0
+    style T fill:#ffe0e0
+    style U fill:#ffe0e0
     style E fill:#fff4d6
+    style ACTR fill:#fff4d6
     style I fill:#e0f0ff
 ```
 
@@ -88,13 +106,16 @@ sequenceDiagram
     W->>G: GET /api/v1/profiles/me<br/>Authorization: Bearer (Firebase)
     G->>F: verifyIdToken()
     F-->>G: uid + claims
-    Note over G: Borra Authorization<br/>Añade X-User-Id / X-User-Plan
-    G->>P: GET /api/v1/profiles/me<br/>X-User-Id: uid-abc123<br/>(sin ninguna credencial)
+    Note over G: Borra X-User-* del cliente y Authorization<br/>Emite la identidad del token
+    G->>P: GET /api/v1/profiles/me<br/>X-User-Id, X-User-Email, X-User-Roles,<br/>X-User-Plan, X-Request-Id<br/>(sin ninguna credencial)
     P-->>G: 200 perfil
-    G-->>W: 200 perfil
+    G-->>W: 200 perfil + X-Request-Id
 ```
 
-> 🔴 Fíjate en la penúltima flecha: **la petición llega a cameia-perfil sin ninguna credencial.** Cualquiera que alcance la red del microservicio puede llamarlo directamente inventando el header `X-User-Id`. Eso es exactamente lo que el token OIDC debe resolver.
+> 🔴 Fíjate en la penúltima flecha hacia el microservicio: **la petición llega a cameia-perfil sin ninguna
+> credencial.** El gateway ya no deja pasar identidades inventadas por el cliente, pero cualquiera que
+> alcance la red del microservicio puede llamarlo directamente, saltándose el gateway, e inventar el
+> header `X-User-Id`. Eso es exactamente lo que el token OIDC debe resolver.
 
 ---
 
@@ -102,11 +123,13 @@ sequenceDiagram
 
 ### Respuesta: no está implementado. En ningún caso.
 
-Busqué en todo el repositorio y **no existe una sola línea** que pida un token a Google para hablar con un microservicio. Lo único que usa credenciales de Google es `FirebaseConfig`, y es para *verificar* tokens de usuarios, no para *firmar* llamadas salientes.
+No existe una sola línea que pida un token a Google para hablar con un microservicio. Lo único que usa
+credenciales de Google es `FirebaseConfig`, y es para *verificar* tokens de usuarios, no para *firmar*
+llamadas salientes. El diseño está en su propio spec: [`specs/CM-104-correcciones-OIDC/`](../specs/CM-104-correcciones-OIDC/).
 
 ### Una aclaración importante sobre la pregunta
 
-Preguntaste por las rutas que **no** requieren autenticación. El requisito es más amplio: **el token OIDC va en las dos clases de ruta.**
+El token OIDC no es solo para las rutas que no requieren autenticación: **va en las dos clases de ruta.**
 
 ```mermaid
 flowchart LR
@@ -125,24 +148,24 @@ flowchart LR
     style B2 fill:#e0ffe0
 ```
 
-Lo único que distingue al Caso B es que **se salta la validación de Firebase en la entrada**. El paso hacia el microservicio es idéntico en ambos. Son dos capas independientes:
+Lo único que distingue al Caso B es que **se salta la validación de Firebase en la entrada**. El paso hacia
+el microservicio es idéntico en ambos. Son dos capas independientes:
 
-- **Firebase** responde *"¿quién es este usuario?"* → mira al navegador.
-- **OIDC** responde *"¿tiene derecho este gateway a llamar a este microservicio?"* → mira a la nube.
+- **Firebase** responde *"¿quién es este usuario?"* → mira al navegador. **Existe.**
+- **OIDC** responde *"¿tiene derecho este gateway a llamar a este microservicio?"* → mira a la nube. **No existe.**
 
-Hoy la primera existe a medias y **la segunda no existe**.
+### Qué recibe hoy el microservicio
 
-### Qué hace hoy el código con el header `Authorization`
+| Tipo de ruta | `Authorization` | Cabeceras de identidad | Trazabilidad |
+|---|---|---|---|
+| Privada (`/api/v1/**`) | Se **borra** | Las del token: `X-User-Id` siempre; `X-User-Email`, `X-User-Roles` y `X-User-Plan` si el claim existe. Las del cliente se descartan | `X-Request-Id` |
+| Pública (`/webhooks/wompi`) | Se **reenvía tal cual** | Ninguna: las `X-User-*` del cliente se borran | `X-Request-Id` |
 
-| Tipo de ruta | Qué pasa con `Authorization` | Qué recibe el microservicio |
-|---|---|---|
-| Privada (`/api/v1/**`) | Se **borra** | `X-User-Id`, `X-User-Plan`. Ninguna credencial |
-| Pública (`/webhooks/wompi`) | Se **reenvía tal cual** | Lo que el cliente haya mandado, sin tocar |
+Lo que falta en las dos filas es lo mismo: **no hay token OIDC**.
 
-Las dos filas están mal, por motivos distintos:
-
-1. En la privada, borrar el token de Firebase es correcto. El error es **no poner nada en su lugar**: ahí debería ir el token OIDC.
-2. En la pública, el filtro hace `return` antes de tocar nada, así que **el `Authorization` del cliente y cualquier header `X-User-*` que mande pasan intactos** hasta cameia-cuentas.
+Que la ruta pública reenvíe el `Authorization` del cliente es una decisión escrita, no un descuido: Wompi
+autentica su webhook con una firma en el cuerpo. Se revisa en el spec de OIDC, porque esa cabecera pasará a
+llevar el token de Google (`specs/CM-104-correcciones/plan.md` §3.3).
 
 ### Lo que falta para cerrarlo
 
@@ -156,9 +179,12 @@ GoogleCredentials.getApplicationDefault()
 
 Tres detalles que suelen costar horas de depuración:
 
-- El `audience` debe ser la URL del destino **exacta**, incluida la barra final. Si no coincide, Cloud Run responde `401` y el mensaje no dice que el problema sea el audience.
-- El valor del audience es el mismo que la ruta ya tiene en `uri` en el YAML. No hay que crear una segunda variable de entorno para él, porque entonces hay dos valores que pueden divergir.
-- En local no hay IAM ni credenciales de Google, así que el paso se apaga con una variable (`GATEWAY_OIDC_ENABLED=false`) y en despliegue queda forzado a `true`.
+- El `audience` debe ser la URL del destino **exacta**, incluida la barra final. Si no coincide, Cloud Run
+  responde `401` y el mensaje no dice que el problema sea el audience.
+- El valor del audience es el mismo que la ruta ya tiene en `uri` en el YAML. No hay que crear una segunda
+  variable de entorno para él, porque entonces hay dos valores que pueden divergir.
+- En local no hay IAM ni credenciales de Google, así que el paso se apaga con una variable
+  (`GATEWAY_OIDC_ENABLED=false`) y en despliegue queda forzado a `true`.
 
 El detalle completo del objetivo está en [`AGENTS.md` §6](../AGENTS.md).
 
@@ -166,72 +192,91 @@ El detalle completo del objetivo está en [`AGENTS.md` §6](../AGENTS.md).
 
 ## 4. Pregunta 2 — Docker: healthcheck y perfiles
 
-### Healthcheck: sí, pero solo en Compose
+### Healthcheck: en la imagen y en Compose
 
-Existe y está bien configurado, en el servicio `app` de `docker-compose.yml`:
+El `Dockerfile` declara su propia comprobación, así que la tiene también quien corra la imagen suelta con
+`docker run`. Compose usa el mismo comando y los mismos intervalos:
 
-```yaml
-healthcheck:
-  test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health || exit 1"]
-  interval: 10s      # cada 10 segundos
-  timeout: 5s        # falla si tarda más de 5
-  retries: 12        # 12 fallos seguidos para marcarlo unhealthy
-  start_period: 30s  # 30 segundos de gracia al arrancar (la JVM tarda)
+```dockerfile
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=12 \
+  CMD wget -qO- http://localhost:8080/actuator/health || exit 1
 ```
 
-⚠️ **El `Dockerfile` no tiene instrucción `HEALTHCHECK`.** La comprobación vive únicamente en Compose, o sea solo en desarrollo local. Quien corra la imagen suelta (`docker run`) o la despliegue fuera de Compose no tiene healthcheck. En Cloud Run no importa demasiado, porque Cloud Run aplica sus propias sondas al puerto, pero conviene saberlo.
+Comprobado: la imagen arrancada con `docker run`, sin Compose, llega a `(healthy)`. En Cloud Run esta
+instrucción no se usa, porque Cloud Run aplica sus propias sondas al puerto.
 
-### Perfiles de Spring: el perfil `local` es solo una etiqueta
+### Perfiles de Spring
 
-Aquí hay una sorpresa. El perfil se activa en tres sitios:
+El perfil `local` es el activo por defecto y se declara en tres sitios:
 
 - `application.yml` → `spring.profiles.active: ${SPRING_PROFILES_ACTIVE:local}`
 - `docker-compose.yml` servicio `app` → `SPRING_PROFILES_ACTIVE: local`
 - `.env.example` → `SPRING_PROFILES_ACTIVE=local`
 
-**Pero no existe ningún archivo `application-local.yml`.** El único archivo de perfil del repositorio es `src/test/resources/application-test.yml`, que sí hace algo real: apaga Firebase (`gateway.firebase.enabled=false`) para que las pruebas usen un mock.
+Y tiene archivo propio, `src/main/resources/application-local.yml`, con un único ajuste de desarrollo:
+
+```yaml
+logging:
+  level:
+    org.springframework.cloud.gateway: DEBUG   # traza de coincidencia de rutas
+```
+
+Comprobado: al arrancar con Compose el log dice `The following 1 profile is active: "local"` y aparecen las
+trazas `DEBUG` de coincidencia de rutas, que `application.yml` deja en `INFO`.
+
+> El archivo está versionado y **no debe contener secretos**. Hasta el 14/09/2026 `.gitignore` lo ignoraba,
+> y por eso el que marcaba como creado CM-104 nunca llegó al repositorio.
 
 ```text
 src/main/resources/
-└── application.yml          ← toda la configuración, sin distinguir entorno
+├── application.yml          ← rutas, CORS, timeout, Actuator
+└── application-local.yml    ← solo overrides de desarrollo
 
 src/test/resources/
-├── application-test.yml     ← el único perfil con contenido propio
+├── application-test.yml     ← apaga Firebase (gateway.firebase.enabled=false) para usar un mock
 └── firebase-noop.json
 ```
 
-Consecuencia práctica: **hoy el perfil `local` no cambia nada.** La diferencia entre local y despliegue se hace enteramente con variables de entorno. Funciona, pero significa que no hay dónde poner una regla del tipo "en despliegue esto va forzado a `true`", que es justo lo que pide el flag de OIDC de [§3](#3-pregunta-1--el-token-oidc-de-google).
+La diferencia entre local y despliegue se sigue haciendo con variables de entorno. El perfil de despliegue
+como archivo propio lo crea el spec de OIDC, que lo necesita para forzar `GATEWAY_OIDC_ENABLED=true`.
 
 ### Los dos servicios de Compose
 
-| Servicio | Para qué | Imagen |
+| Servicio | Para qué | Cómo se arranca |
 |---|---|---|
-| `app` | El gateway corriendo, puerto 8080 | Se construye del `Dockerfile` |
-| `verify` | Compilar y correr las pruebas sin instalar Java ni Maven | `maven:3.9-eclipse-temurin-21` |
+| `app` | El gateway corriendo, puerto 8080 | `docker compose up --build -d` |
+| `verify` | Compilar y correr las pruebas sin instalar Java ni Maven | `docker compose run --rm verify` |
 
-⚠️ **`verify` arranca junto con `app`.** El comentario del archivo dice *"No se levanta con `up`: se invoca a demanda"*, pero nada en el archivo implementa eso. Lo comprobé:
+`verify` está detrás del perfil de Compose `tools`, así que `up` ya no lo arranca:
 
 ```console
 $ docker compose config --services
 app
-verify
 
-$ docker compose config --profiles
-(vacío)
+$ docker compose --profile tools config --services
+verify
+app
 ```
 
-Como `verify` no está detrás de un perfil de Compose, `docker compose up` lo levanta también y se queda corriendo la suite de pruebas. Para que el comentario sea verdad hace falta añadirle `profiles: ["tools"]` y llamarlo con `docker compose run --rm verify`, que es como ya lo documentan el README y `AGENTS.md`.
+`docker compose run --rm verify` sigue funcionando igual, porque `run` activa el perfil del servicio que nombra.
 
-### Dos notas sobre la imagen
+### Notas sobre la imagen y las credenciales
 
-- El contenedor **corre como `root`**: el `Dockerfile` no crea usuario ni tiene instrucción `USER`.
-- La clave de Firebase se monta como volumen de solo lectura y **nunca se copia a la imagen**, que es lo correcto. Si `FIREBASE_KEY_PATH` está vacío, Compose monta `/dev/null` y el gateway no arranca. Es fallo intencional, no un bug.
+- El contenedor corre con el usuario **`cameia`**, sin privilegios. Comprobado: `docker exec … whoami` responde `cameia`.
+- En local, la clave de Firebase se monta como volumen de solo lectura en `/run/secrets/firebase-key` y
+  **nunca se copia a la imagen**. Si `FIREBASE_KEY_PATH` está vacío en `.env`, Compose monta `/dev/null` y el
+  gateway no arranca: es un fallo intencional, no un bug.
+- En Cloud Run no se monta ningún JSON. Los workflows de `.github/workflows/` despliegan con
+  `--service-account` y sin `GOOGLE_APPLICATION_CREDENTIALS`, así que el Admin SDK toma las credenciales de la
+  cuenta de servicio del servicio. Esa cuenta es hoy la de Compute Engine por defecto
+  (`…-compute@developer.gserviceaccount.com`); sus permisos no se revisaron en este escaneo.
 
 ---
 
 ## 5. Pregunta 3 — Enrutamiento y la decisión de "¿requiere sesión?"
 
-Esta es la parte con más matices, así que la separo en dos preguntas, porque **son dos mecanismos distintos que no se conocen entre sí**.
+Esta es la parte con más matices, así que la separo en dos preguntas, porque **son dos mecanismos distintos
+que no se conocen entre sí**.
 
 ```mermaid
 flowchart TB
@@ -249,7 +294,8 @@ flowchart TB
 
 ### 5.1 ¿A dónde va? — lo decide el YAML
 
-Cada ruta son tres cosas: un `id`, un destino (`uri`, siempre una variable de entorno) y uno o más `predicates` que deciden si la URL encaja.
+Cada ruta son tres cosas: un `id`, un destino (`uri`, siempre una variable de entorno) y uno o más
+`predicates` que deciden si la URL encaja.
 
 ```yaml
 - id: cameia-perfil
@@ -269,43 +315,49 @@ Las 6 rutas declaradas hoy:
 | `/api/v1/voice-service/**` | cameia-voz | `Path` |
 | `/api/v1/audit/**` | cameia-auditoria | `Path` |
 
-Ninguna URL se escribe en Java. Si ninguna ruta coincide, la respuesta es `404`.
+Ninguna URL se escribe en Java. Si ninguna ruta coincide, la respuesta es `404 NOT_FOUND`.
 
 ### 5.2 ¿Hace falta sesión? — lo decide una constante en Java
 
-Aquí está la respuesta a tu pregunta. **No hay ninguna marca en el YAML que diga si una ruta es pública o privada.** La decisión la toma un único filtro global que corre para *todas* las rutas, y que consulta una lista fija escrita en el código:
+**No hay ninguna marca en el YAML que diga si una ruta es pública o privada.** La decisión la toma un único
+filtro global que corre para *todas* las rutas del gateway, y que consulta una lista fija escrita en el código:
 
 ```java
 private static final Set<String> PUBLIC_PATHS = Set.of(
-        "/webhooks/wompi",
-        "/actuator/health",
-        "/actuator/info"
+        "/webhooks/wompi"
 );
 ```
 
-La regla es **"todo cerrado salvo lo listado"**, que es la orientación segura: si alguien añade una ruta nueva al YAML y no toca el Java, esa ruta queda protegida por omisión. Nunca se abre sola.
+La regla es **"todo cerrado salvo lo listado"**, que es la orientación segura: si alguien añade una ruta nueva
+al YAML y no toca el Java, esa ruta queda protegida por omisión. Nunca se abre sola.
 
 ```mermaid
 flowchart TD
     A["Llega la petición"] --> B{"¿PUBLIC_PATHS contiene<br/>esta ruta, texto exacto?"}
-    B -->|Sí| C["Adelante, sin validar"]
-    B -->|No| D{"¿Trae header<br/>Authorization: Bearer ...?"}
+    B -->|Sí| C["Borra X-User-* del cliente<br/>y sigue sin validar"]
+    B -->|No| D{"¿Authorization: Bearer<br/>con token no vacío?"}
     D -->|No| E["401 AUTH_REQUIRED"]
     D -->|Sí| F["verifyIdToken con Firebase"]
-    F -->|Excepción de Firebase| E
-    F -->|OK| G["Propaga identidad y sigue"]
+    F -->|FirebaseAuthException o<br/>IllegalArgumentException| E
+    F -->|Otro fallo| X["500 INTERNAL_ERROR<br/>el problema es del gateway"]
+    F -->|OK| G["Reemplaza la identidad y sigue"]
 
     style C fill:#fff4d6
     style E fill:#ffe0e0
+    style X fill:#ffe0e0
     style G fill:#e0ffe0
 ```
+
+Un token vacío (`Authorization: Bearer `) se rechaza **antes** de llamar a Firebase. Un fallo que no es culpa
+del token, como no poder hablar con Firebase, no se disfraza de `401`.
 
 ### 5.3 Cuatro consecuencias de que la lista esté en Java
 
 Esto es lo que conviene entender antes de añadir rutas:
 
 **1. Abrir una ruta al público exige recompilar.**
-`AGENTS.md` §5 dice que añadir una ruta *"no requiere código Java, solo editar `application.yml`"*. Es cierto solo si la ruta es privada. Si es pública, hay que editar la constante, recompilar y volver a construir la imagen.
+Una ruta privada solo necesita el YAML. Una pública exige además editar `PUBLIC_PATHS`, recompilar y volver a
+construir la imagen. `AGENTS.md` §5 ya lo documenta.
 
 **2. La comparación es de texto exacto, sin comodines.**
 `PUBLIC_PATHS` es un `Set<String>` y se consulta con `.contains(path)`. No admite patrones. Por eso:
@@ -319,23 +371,56 @@ Esto es lo que conviene entender antes de añadir rutas:
 No se puede expresar una familia pública tipo `/api/v1/public/**` sin cambiar la forma de comparar.
 
 **3. El filtro ignora el método HTTP.**
-`PUBLIC_PATHS` solo mira la ruta. Que `/webhooks/wompi` sea POST lo impone el predicado `Method=POST` del YAML, no el filtro. Un `GET /webhooks/wompi` no coincide con ninguna ruta y muere en un `404` antes de llegar al filtro.
+`PUBLIC_PATHS` solo mira la ruta. Que `/webhooks/wompi` sea POST lo impone el predicado `Method=POST` del YAML,
+no el filtro. Un `GET /webhooks/wompi` no coincide con ninguna ruta y muere en un `404` antes de llegar al filtro.
 
-**4. Las dos entradas de Actuator no hacen nada.**
-Esto lo comprobé experimentalmente: quité `/actuator/health` y `/actuator/info` de `PUBLIC_PATHS`, corrí la suite, y la prueba que pide `/actuator/health` sin token **siguió dando 200**. El motivo es el orden interno de Spring: los endpoints de Actuator los atiende su propio handler, que tiene más prioridad que el enrutador del gateway, así que el filtro **nunca llega a verlos**. Son entradas defensivas e inertes. No molestan, pero no protegen ni desprotegen nada.
+**4. Actuator no pasa por el filtro, así que no está en la lista.**
+Spring elige quién atiende una petición recorriendo sus `HandlerMapping` por orden. Actuator va primero
+(orden `-100`) y las rutas del gateway después (orden `1`), así que el filtro **nunca ve** `/actuator/**`.
+Comprobado con una prueba de sondeo: `GET /actuator/health` con un token basura responde `200` y Firebase no
+llega a llamarse. Por eso las entradas de Actuator se retiraron de `PUBLIC_PATHS`: no controlaban nada.
 
-### 5.4 Lo que sí se aplica a todas las rutas
+La consecuencia importante: **todo endpoint que Actuator exponga es público.** Hoy son `health` e `info`, pero
+la lista sale de `MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE`. Con `env` añadido a esa variable,
+`/actuator/env` respondió `200` sin token, con perfiles y nombres de propiedades (valores ocultos). Queda
+abierto como `GW-TBD-11`.
+
+### 5.4 Lo que se aplica a todas las rutas
 
 | Control | Valor | Dónde |
 |---|---|---|
-| CORS | Un solo origen (`GATEWAY_CORS_ALLOWED_ORIGIN`), con credenciales, cacheado 1 h | `globalcors` en el YAML |
-| Timeout al microservicio | 30 s (`GATEWAY_TIMEOUT_MS`) | `httpclient.response-timeout` |
-| Formato de error | `{"code":"...","message":"..."}` | `GlobalErrorHandler` |
+| CORS | Un solo origen (`GATEWAY_CORS_ALLOWED_ORIGIN`), con credenciales, cacheado 1 h. Cabeceras admitidas: `Authorization`, `Content-Type`, `X-Request-Id` | `globalcors` en el YAML |
+| Timeout al microservicio | 30 s (`GATEWAY_TIMEOUT_MS`); al agotarse, `504` | `httpclient.response-timeout` |
+| `X-Request-Id` | Se conserva el del cliente o se genera uno. Llega al microservicio y vuelve al cliente con un único valor | `FirebaseAuthGlobalFilter` |
+| Formato de error | `{"code":"...","message":"..."}` desde un catálogo cerrado | `GlobalErrorHandler` |
 
-⚠️ Dos avisos sobre esta tabla:
+CORS ya no admite ninguna cabecera `X-User-*`. Comprobado con el gateway corriendo: un preflight que pide
+`X-User-Id` recibe `403`; uno que pide `X-Request-Id` recibe `200`.
 
-- La lista de headers permitidos por CORS **incluye `X-User-Id` y `X-User-Plan`**. Son justo los headers que solo el gateway debería emitir, y permitirlos en CORS invita al navegador a mandarlos.
-- El manejador de errores solo conserva el código de estado si la excepción es una `ResponseStatusException`. **Todo lo demás se convierte en `500`** y el mensaje de la excepción se copia al cuerpo de la respuesta. No hay ninguna prueba que cubra "microservicio caído" ni "microservicio lento", así que el `504` que promete el requisito REQ-NF-02 no está verificado en este repositorio.
+El catálogo de errores (spec `CM-104-correcciones` §2.4):
+
+| Situación | Estado | `code` | Quién lo escribe |
+|---|---|---|---|
+| Token ausente, vacío, malformado o rechazado | `401` | `AUTH_REQUIRED` | el filtro |
+| Ninguna ruta coincide con la URL | `404` | `NOT_FOUND` | `GlobalErrorHandler` |
+| Respuesta ininteligible del destino | `502` | `BAD_GATEWAY` | `GlobalErrorHandler` |
+| Destino inalcanzable | `503` | `SERVICE_UNAVAILABLE` | `GlobalErrorHandler` |
+| Destino sin responder a tiempo | `504` | `GATEWAY_TIMEOUT` | `GlobalErrorHandler` |
+| Cualquier otro fallo del gateway | `500` | `INTERNAL_ERROR` | `GlobalErrorHandler` |
+
+El mensaje es siempre un texto fijo en español. **El mensaje de la excepción nunca llega al cuerpo**: va al log
+en nivel `ERROR`, con el mismo `X-Request-Id` que recibió el microservicio. `GatewayErrorMappingTest` lo
+comprueba con un destino lento (`504`), uno inalcanzable (`503`) y buscando `Exception`, `java.` y el host en
+los cuerpos.
+
+⚠️ Tres avisos sobre esta sección:
+
+- Un estado que no está en el catálogo conserva su código pero sale con cuerpo `INTERNAL_ERROR`. Ejemplo real:
+  `POST /actuator/health` responde `405` con `{"code":"INTERNAL_ERROR"}`. Abierto como `GW-TBD-10`.
+- Todo error pasa por el log en `ERROR` con traza completa, incluidos los `404` de URLs inexistentes. Un
+  escáner de URLs llena el log.
+- CORS no declara `exposedHeaders`, así que el JavaScript del navegador **no puede leer** el `X-Request-Id`
+  de la respuesta, aunque llegue.
 
 ---
 
@@ -353,7 +438,8 @@ Busqué todos los mecanismos habituales y no aparece ninguno:
 | `bucket4j`, `resilience4j` | No están |
 | Circuit breaker, reintentos | No están |
 
-**Hoy el gateway reenvía tantas peticiones como reciba.** El único control de tráfico es el timeout de 30 segundos por petición.
+**Hoy el gateway reenvía tantas peticiones como reciba.** El único control de tráfico es el timeout de 30
+segundos por petición.
 
 Y es deliberado: la spec de CM-113 lo dice en su sección *Fuera de alcance*, junto al circuit breaker y a mTLS.
 
@@ -362,25 +448,32 @@ Y es deliberado: la spec de CM-113 lo dice en su sección *Fuera de alcance*, ju
 Dos piezas y una advertencia:
 
 1. El filtro `RequestRateLimiter`, que en Spring Cloud Gateway usa Redis con algoritmo *token bucket*.
-2. Un `KeyResolver`, que responde *"¿por quién cuento las peticiones?"*. Lo natural aquí es por `X-User-Id` en rutas privadas y por IP en las públicas.
+2. Un `KeyResolver`, que responde *"¿por quién cuento las peticiones?"*. Lo natural aquí es por `X-User-Id` en
+   rutas privadas y por IP en las públicas.
 
-⚠️ **La advertencia:** en Cloud Run el gateway escala a varias instancias. Un contador en memoria limita por instancia, así que con 4 instancias el límite real es 4 veces el configurado. Por eso el contador tiene que ser compartido (Redis) o el límite tiene que aplicarse antes del gateway (Cloud Armor).
+⚠️ **La advertencia:** en Cloud Run el gateway escala a varias instancias. Un contador en memoria limita por
+instancia, así que con 4 instancias el límite real es 4 veces el configurado. Por eso el contador tiene que
+ser compartido (Redis) o el límite tiene que aplicarse antes del gateway (Cloud Armor).
 
 ---
 
-## 7. Otros hallazgos del escaneo
+## 7. Hallazgos abiertos
 
-Cosas que no preguntaste pero que salieron al leer el código. Están en la tabla de brechas de [`AGENTS.md` §6.5](../AGENTS.md) con su ubicación exacta.
+Los siete hallazgos del escaneo del 11/09/2026 (identidad añadida en vez de reemplazada, rutas públicas sin
+limpiar, `500` ante un Bearer vacío, mensaje de la excepción en el cuerpo, `GatewayProperties` inerte, contrato
+de cabeceras incompleto y falta de `X-Request-Id`) quedaron **corregidos y cubiertos por pruebas** en
+[`specs/CM-104-correcciones/`](../specs/CM-104-correcciones/).
 
-| # | Hallazgo | Por qué importa |
-|---|---|---|
-| 1 | El filtro **añade** los headers `X-User-*` en vez de reemplazarlos | Si el cliente manda su propio `X-User-Id`, el microservicio recibe **dos valores** y elige uno |
-| 2 | En rutas públicas no se limpia ningún header de identidad | Un cliente puede inventarse `X-User-Id` hacia `/webhooks/wompi` |
-| 3 | Un `Bearer` vacío produce `500`, no `401` | `verifyIdToken("")` lanza `IllegalArgumentException`, y el filtro solo captura `FirebaseAuthException` |
-| 4 | El cuerpo del error copia el mensaje de la excepción | Puede filtrar detalle interno, como nombres de host, al cliente |
-| 5 | `GatewayProperties` está declarada, validada y sin usar | Parece que la configuración se valida al arrancar, y no es así: el YAML lee las variables de entorno directamente |
-| 6 | Faltan `X-User-Email`, `X-User-Roles` y `X-Request-Id` | cameia-cuentas y cameia-entrevista los declaran obligatorios en su contrato de entrada |
-| 7 | Sin `X-Request-Id`, no hay trazabilidad entre servicios | Un error reportado por el frontend no se puede seguir por los logs de los microservicios |
+Lo que sigue abierto hoy:
+
+| # | Hallazgo | Por qué importa | Dónde se sigue |
+|---|---|---|---|
+| 1 | No hay token OIDC hacia los microservicios | Cualquiera con acceso a la red del microservicio puede llamarlo saltándose el gateway | `specs/CM-104-correcciones-OIDC/`, `AGENTS.md` §6.5 |
+| 2 | Todo endpoint expuesto de Actuator es público, y la lista la controla una variable de entorno | Configurarla mal publica endpoints internos sin autenticación | `GW-TBD-11` |
+| 3 | Estados fuera del catálogo salen con cuerpo `INTERNAL_ERROR` | El cuerpo contradice al estado (`405` → `INTERNAL_ERROR`) | `GW-TBD-10` |
+| 4 | Los `404` se registran en `ERROR` con traza | Ruido en el log ante escáneres de URLs | sin ticket |
+| 5 | CORS no expone `X-Request-Id` | El frontend no puede mostrar el id al reportar un error | sin ticket |
+| 6 | El despliegue usa la cuenta de servicio por defecto de Compute Engine | Suele tener permisos amplios sobre el proyecto; no se revisaron | a revisar con el equipo |
 
 ---
 
@@ -390,8 +483,8 @@ Con Docker, sin instalar Java ni Maven:
 
 ```bash
 docker network create cameia-net        # una sola vez
-docker compose run --rm verify          # compila y corre las 10 pruebas
-docker compose up --build -d app        # levanta el gateway (nombra 'app' para no arrancar 'verify')
+docker compose run --rm verify          # compila y corre las 27 pruebas
+docker compose up --build -d            # levanta solo el gateway ('verify' está tras el perfil tools)
 curl http://localhost:8080/actuator/health
 ```
 
@@ -408,8 +501,16 @@ grep -rn "getApplicationDefault" src/
 # ¿Hay rate limit? (sin resultados = no hay nada)
 grep -rni "ratelimit\|redis\|KeyResolver" src/ pom.xml
 
-# ¿Qué servicios arranca 'up'?
+# ¿Qué servicios arranca 'up'? (solo app)
 docker compose config --services
+
+# ¿Con qué usuario corre el contenedor? (cameia)
+docker exec cameia-gateway-app whoami
+
+# ¿CORS admite X-User-Id? (403 = no)
+curl -s -o /dev/null -w '%{http_code}\n' -X OPTIONS http://localhost:8080/api/v1/profiles/me \
+  -H 'Origin: http://localhost:5173' -H 'Access-Control-Request-Method: GET' \
+  -H 'Access-Control-Request-Headers: X-User-Id'
 
 # ¿Qué rutas están declaradas?
 grep -A2 "id:" src/main/resources/application.yml
@@ -419,9 +520,14 @@ grep -A2 "id:" src/main/resources/application.yml
 
 ## Resumen para quien tenga que priorizar
 
-Lo que hay hoy funciona para el objetivo de CM-113: el frontend puede llamar al gateway con un token de Firebase y llegar a cameia-perfil. Sobre eso:
+Lo que hay hoy funciona para el objetivo de CM-113 y cumple el contrato de identidad con los microservicios:
+el frontend llama al gateway con un token de Firebase, el microservicio recibe una identidad que el cliente no
+puede falsificar, y cada error se puede rastrear por su `X-Request-Id`. Sobre eso:
 
-- 🔴 **Bloqueante para despliegue:** sin token OIDC, cualquiera con acceso a la red del microservicio puede llamarlo saltándose el gateway e inventando la identidad. Es la brecha más grande.
-- 🟠 **Barato y de alto valor:** reemplazar en vez de añadir los headers `X-User-*`, limpiarlos en rutas públicas, y devolver `401` en lugar de `500` con un `Bearer` vacío. Son pocas líneas cada uno.
-- 🟡 **Antes de que crezca:** `X-Request-Id` para trazabilidad, y el perfil de despliegue como archivo propio para poder forzar valores que el entorno no pueda apagar.
-- ⚪ **Cuando toque, no ahora:** rate limit, circuit breaker. Están fuera de alcance por escrito y necesitan Redis o Cloud Armor para funcionar de verdad con varias instancias.
+- 🔴 **Bloqueante para despliegue:** sin token OIDC, cualquiera con acceso a la red del microservicio puede
+  llamarlo saltándose el gateway e inventando la identidad. Tiene spec propio.
+- 🟠 **Antes de desplegar:** fijar en el YAML qué expone Actuator en vez de leerlo del entorno (`GW-TBD-11`), y
+  revisar la cuenta de servicio con la que corre el gateway.
+- 🟡 **Cuando haya un rato:** `GW-TBD-10`, exponer `X-Request-Id` en CORS y bajar de nivel el log de los `404`.
+- ⚪ **Cuando toque, no ahora:** rate limit, circuit breaker. Están fuera de alcance por escrito y necesitan Redis
+  o Cloud Armor para funcionar de verdad con varias instancias.
