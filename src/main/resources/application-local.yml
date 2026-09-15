@@ -1,0 +1,8 @@
+# Perfil local — es el perfil activo por defecto (application.yml). REQ-15.
+# Solo overrides de desarrollo. Nada que deba existir en despliegue.
+#
+# Este archivo está versionado: NUNCA poner aquí secretos, credenciales ni URLs reales.
+# Los secretos van en .env y la clave de Firebase fuera del repositorio (FIREBASE_KEY_PATH).
+logging:
+  level:
+    org.springframework.cloud.gateway: DEBUG   # traza de coincidencia de rutas

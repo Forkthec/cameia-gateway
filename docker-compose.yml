@@ -69,6 +69,9 @@ services:
   # Firebase y MockWebServer; no necesitan la red ni el servicio app corriendo.
   # ---------------------------------------------------------------------------
   verify:
+    # REQ-NF-03: detrás de un perfil, 'docker compose up' ya no lo arranca.
+    # 'docker compose run --rm verify' sigue funcionando: run activa el perfil del servicio que nombra.
+    profiles: ["tools"]
     image: maven:3.9-eclipse-temurin-21
     working_dir: /app
     command: mvn verify -B --no-transfer-progress

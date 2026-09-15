@@ -107,10 +107,10 @@ docker compose run --rm verify
 
 ## Bloque 5 — Limpieza: configuración inerte y artefactos que faltan
 
-- [ ] T-31 · Eliminar `/actuator/health` y `/actuator/info` de `PUBLIC_PATHS`, y dejar un comentario en el código explicando por qué: Actuator lo atiende su propio handler y el filtro nunca lo ve. La prueba `actuatorHealth_withoutToken_returns200` **no se toca**: es la red de seguridad que demuestra que el cambio es inocuo (REQ-13)
-- [ ] T-32 · Eliminar `GatewayProperties.java` y la anotación `@EnableConfigurationProperties(GatewayProperties.class)` de `GatewayApplication`. Eliminar también las claves `gateway.cors-allowed-origin` y `gateway.timeout` de `application-test.yml`. **`gateway.firebase.enabled` se queda**: la usa el `@ConditionalOnProperty` de `FirebaseConfig` (REQ-14, plan §3.6)
-- [ ] T-33 · Retirar `X-User-Id` y `X-User-Plan` de `allowedHeaders` en el CORS de `application.yml`, y añadir `X-Request-Id` (REQ-NF-01, plan §3.7)
-- [ ] T-34 · Crear `src/main/resources/application-local.yml` con el override de log del plan §3.8. El perfil `local` es el activo por defecto y hoy no existe el archivo, aunque `tasks.md` de CM-104 lo marque como creado (REQ-15)
+- [x] T-31 · Eliminar `/actuator/health` y `/actuator/info` de `PUBLIC_PATHS`, y dejar un comentario en el código explicando por qué: Actuator lo atiende su propio handler y el filtro nunca lo ve. La prueba `actuatorHealth_withoutToken_returns200` **no se toca**: es la red de seguridad que demuestra que el cambio es inocuo (REQ-13)
+- [x] T-32 · Eliminar `GatewayProperties.java` y la anotación `@EnableConfigurationProperties(GatewayProperties.class)` de `GatewayApplication`. Eliminar también las claves `gateway.cors-allowed-origin` y `gateway.timeout` de `application-test.yml`. **`gateway.firebase.enabled` se queda**: la usa el `@ConditionalOnProperty` de `FirebaseConfig` (REQ-14, plan §3.6)
+- [x] T-33 · Retirar `X-User-Id` y `X-User-Plan` de `allowedHeaders` en el CORS de `application.yml`, y añadir `X-Request-Id` (REQ-NF-01, plan §3.7)
+- [x] T-34 · Crear `src/main/resources/application-local.yml` con el override de log del plan §3.8. El perfil `local` es el activo por defecto y hoy no existe el archivo, aunque `tasks.md` de CM-104 lo marque como creado (REQ-15) — *nota del 14/09/2026: la causa de fondo era `.gitignore`, que ignoraba `application-local.yml`, `.yaml` y `.properties`. Por eso el archivo de CM-104 nunca llegó al repositorio. Decidido por Juan Vela: se retiran esas reglas, porque los secretos viven en `.env` y `firebase/`, que siguen ignorados. El archivo lleva un comentario que prohíbe poner secretos*
 
 **Cierre de bloque:** `docker compose run --rm verify` en verde. Además, arranca el gateway y
 confirma que `GET /actuator/health` sigue respondiendo `200` sin token.
@@ -119,9 +119,9 @@ confirma que `GET /actuator/health` sigue respondiendo `200` sin token.
 
 ## Bloque 6 — Empaquetado: Docker
 
-- [ ] T-35 · En el `Dockerfile`, crear un usuario `cameia` sin privilegios, darle la propiedad de `/app` y añadir `USER cameia` antes del `ENTRYPOINT` (REQ-NF-06, plan §3.9)
-- [ ] T-36 · Añadir la instrucción `HEALTHCHECK` al `Dockerfile` con los mismos intervalos que ya usa Compose, para que un contenedor arrancado sin Compose también la tenga (REQ-NF-05, plan §3.9)
-- [ ] T-37 · Añadir `profiles: ["tools"]` al servicio `verify` de `docker-compose.yml`. Después comprueba las dos cosas: `docker compose config --services` sigue listando ambos, pero `docker compose up -d` arranca solo `app`, y `docker compose run --rm verify` sigue funcionando igual (REQ-NF-03, plan §3.10)
+- [x] T-35 · En el `Dockerfile`, crear un usuario `cameia` sin privilegios, darle la propiedad de `/app` y añadir `USER cameia` antes del `ENTRYPOINT` (REQ-NF-06, plan §3.9)
+- [x] T-36 · Añadir la instrucción `HEALTHCHECK` al `Dockerfile` con los mismos intervalos que ya usa Compose, para que un contenedor arrancado sin Compose también la tenga (REQ-NF-05, plan §3.9)
+- [x] T-37 · Añadir `profiles: ["tools"]` al servicio `verify` de `docker-compose.yml`. Después comprueba las dos cosas: `docker compose config --services` sigue listando ambos, pero `docker compose up -d` arranca solo `app`, y `docker compose run --rm verify` sigue funcionando igual (REQ-NF-03, plan §3.10) — *nota del 14/09/2026: sin perfil, `docker compose config --services` lista solo `app`; `verify` aparece con `--profile tools`. Es el comportamiento buscado; el texto de la tarea era impreciso*
 
 **Cierre de bloque:** construye la imagen con `docker build -t cameia-gateway .`, arráncala con
 `docker run` y confirma dos cosas: `docker ps` muestra el estado `healthy`, y

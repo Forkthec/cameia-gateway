@@ -95,15 +95,17 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
     );
 
     /**
-     * Rutas que no exigen token de Firebase (Caso B). La comparación es exacta, sin comodines.
+     * Rutas del Gateway que no exigen token de Firebase (Caso B). La comparación es exacta, sin
+     * comodines.
      *
-     * <p>Las entradas de Actuator son inertes: Actuator lo atiende su propio handler y este filtro
-     * nunca lo ve. Se retiran en T-31 (REQ-13).
+     * <p>Aquí no van {@code /actuator/health} ni {@code /actuator/info}, y no es un olvido (REQ-13).
+     * Actuator se atiende con su propio {@code HandlerMapping} (orden {@code -100}), antes que las
+     * rutas del Gateway (orden {@code 1}), así que este filtro nunca ve esas solicitudes: son
+     * públicas por arquitectura, no por esta lista. Una entrada aquí aparentaría controlar algo que
+     * no controla. La prueba {@code actuatorHealth_withoutToken_returns200} lo demuestra.
      */
     private static final Set<String> PUBLIC_PATHS = Set.of(
-            "/webhooks/wompi",
-            "/actuator/health",
-            "/actuator/info"
+            "/webhooks/wompi"
     );
 
     private final FirebaseAuth firebaseAuth;
