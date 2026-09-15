@@ -78,8 +78,8 @@ spring:
                 allowedHeaders:
                   - Authorization
                   - Content-Type
-                  - X-User-Id
-                  - X-User-Plan
+                  - X-Request-Id      # el cliente puede aportarlo (REQ-09)
+                # Sin X-User-*: solo el Gateway las emite (REQ-NF-01)
                 allowCredentials: true
                 maxAge: 3600
 

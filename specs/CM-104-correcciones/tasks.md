@@ -83,10 +83,10 @@ docker compose run --rm verify
 
 ## Bloque 3 — Rechazo: Bearer vacío y errores de Firebase
 
-- [ ] T-22 · En `FirebaseAuthGlobalFilter`, extraer el token con `trim()` y responder `401` si queda vacío, **antes** de llamar a Firebase. Hoy `Authorization: Bearer ` (con el valor vacío) llega a `verifyIdToken("")`, que lanza `IllegalArgumentException` y termina en `500` (REQ-02, plan §3.4)
-- [ ] T-23 · Añadir el método privado `isTokenRejection(Throwable)` que devuelva `true` para `FirebaseAuthException` e `IllegalArgumentException`, y usarlo en el `onErrorResume`. **No capturar `Throwable` en bruto**: un fallo de red al hablar con Firebase es problema del Gateway y debe seguir siendo `500` (REQ-02, plan §3.4)
-- [ ] T-24 · Añadir dos pruebas: `Authorization: Bearer ` (vacío) → `401` con `code: AUTH_REQUIRED`; `Authorization: Basic xyz` → `401` (pruebas 7 y 8 del plan)
-- [ ] T-24a · Incluir la cabecera `X-Request-Id` en toda respuesta `401` del filtro, con el mismo valor que resolvió `resolveRequestId`, fijada con `set`. Añadir una prueba: sin token y con `X-Request-Id: abc` → `401` con la cabecera de respuesta `X-Request-Id: abc` (REQ-09, plan §1) — *añadida el 12/09/2026: el plan lo pedía y ninguna tarea lo cubría*
+- [x] T-22 · En `FirebaseAuthGlobalFilter`, extraer el token con `trim()` y responder `401` si queda vacío, **antes** de llamar a Firebase. Hoy `Authorization: Bearer ` (con el valor vacío) llega a `verifyIdToken("")`, que lanza `IllegalArgumentException` y termina en `500` (REQ-02, plan §3.4)
+- [x] T-23 · Añadir el método privado `isTokenRejection(Throwable)` que devuelva `true` para `FirebaseAuthException` e `IllegalArgumentException`, y usarlo en el `onErrorResume`. **No capturar `Throwable` en bruto**: un fallo de red al hablar con Firebase es problema del Gateway y debe seguir siendo `500` (REQ-02, plan §3.4)
+- [x] T-24 · Añadir dos pruebas: `Authorization: Bearer ` (vacío) → `401` con `code: AUTH_REQUIRED`; `Authorization: Basic xyz` → `401` (pruebas 7 y 8 del plan)
+- [x] T-24a · Incluir la cabecera `X-Request-Id` en toda respuesta `401` del filtro, con el mismo valor que resolvió `resolveRequestId`, fijada con `set`. Añadir una prueba: sin token y con `X-Request-Id: abc` → `401` con la cabecera de respuesta `X-Request-Id: abc` (REQ-09, plan §1) — *añadida el 12/09/2026: el plan lo pedía y ninguna tarea lo cubría*
 
 **Cierre de bloque:** `docker compose run --rm verify` en verde.
 
@@ -94,12 +94,12 @@ docker compose run --rm verify
 
 ## Bloque 4 — Errores: catálogo cerrado y traducción de fallos
 
-- [ ] T-25 · En `GlobalErrorHandler`, crear el catálogo fijo de códigos y mensajes del spec §2.4 (`AUTH_REQUIRED`, `NOT_FOUND`, `BAD_GATEWAY`, `SERVICE_UNAVAILABLE`, `GATEWAY_TIMEOUT`, `INTERNAL_ERROR`) como constante (REQ-11)
-- [ ] T-26 · Reescribir `resolveStatus` con el mapeo del plan §3.5: `TimeoutException` → `504`; `ConnectException` y `UnknownHostException` → `503`; excepciones de `reactor.netty` → `502`; `ResponseStatusException` conserva su estado; el resto → `500` (REQ-11)
-- [ ] T-27 · Construir el cuerpo de la respuesta desde el catálogo y **eliminar el uso de `ex.getMessage()`**. Con el mensaje ya fijo, el método `sanitize` sobra: bórralo (REQ-12)
-- [ ] T-28 · Registrar la excepción original en el log con el `X-Request-Id` de la solicitud, en nivel `ERROR`. El detalle va al log, nunca a la respuesta (REQ-12)
-- [ ] T-29 · Crear `GatewayErrorMappingTest` con `@DynamicPropertySource` que baje el timeout a `300ms`, y dos pruebas: destino que no responde → `504`; destino en un puerto cerrado → `503`. Para el puerto cerrado, abre un `ServerSocket` en el puerto 0, lee el puerto asignado y ciérralo antes de arrancar el contexto (pruebas 11 y 12 del plan)
-- [ ] T-30 · Añadir una prueba que afirme que ningún cuerpo de error contiene `Exception`, `java.` ni el host del destino (prueba 13 del plan)
+- [x] T-25 · En `GlobalErrorHandler`, crear el catálogo fijo de códigos y mensajes del spec §2.4 (`AUTH_REQUIRED`, `NOT_FOUND`, `BAD_GATEWAY`, `SERVICE_UNAVAILABLE`, `GATEWAY_TIMEOUT`, `INTERNAL_ERROR`) como constante (REQ-11) — *nota del 14/09/2026: el `401` normal lo escribe `FirebaseAuthGlobalFilter` y nunca llega al manejador. `AUTH_REQUIRED` se deja en el catálogo como red de seguridad, para que una `ResponseStatusException(401)` no salga con código `INTERNAL_ERROR`. Decidido por Juan Vela*
+- [x] T-26 · Reescribir `resolveStatus` con el mapeo del plan §3.5: `TimeoutException` → `504`; `ConnectException` y `UnknownHostException` → `503`; excepciones de `reactor.netty` → `502`; `ResponseStatusException` conserva su estado; el resto → `500` (REQ-11)
+- [x] T-27 · Construir el cuerpo de la respuesta desde el catálogo y **eliminar el uso de `ex.getMessage()`**. Con el mensaje ya fijo, el método `sanitize` sobra: bórralo (REQ-12)
+- [x] T-28 · Registrar la excepción original en el log con el `X-Request-Id` de la solicitud, en nivel `ERROR`. El detalle va al log, nunca a la respuesta (REQ-12) — *nota del 14/09/2026: el manejador recibe el `exchange` original y no ve el id que generó el filtro. Decidido por Juan Vela: `FirebaseAuthGlobalFilter.exposeRequestId` fija `X-Request-Id` en la respuesta al inicio y el manejador lo lee de ahí (si el filtro no corrió, como en un `404`, usa el del cliente o genera uno). El filtro lo vuelve a fijar en `beforeCommit`, porque el Gateway añade el `X-Request-Id` que devuelva el microservicio y el cliente recibía dos valores (prueba `downstreamEchoedRequestId_isNotDuplicatedInResponse`)*
+- [x] T-29 · Crear `GatewayErrorMappingTest` con `@DynamicPropertySource` que baje el timeout a `300ms`, y dos pruebas: destino que no responde → `504`; destino en un puerto cerrado → `503`. Para el puerto cerrado, abre un `ServerSocket` en el puerto 0, lee el puerto asignado y ciérralo antes de arrancar el contexto (pruebas 11 y 12 del plan)
+- [x] T-30 · Añadir una prueba que afirme que ningún cuerpo de error contiene `Exception`, `java.` ni el host del destino (prueba 13 del plan)
 
 **Cierre de bloque:** `docker compose run --rm verify` en verde.
 
@@ -107,10 +107,10 @@ docker compose run --rm verify
 
 ## Bloque 5 — Limpieza: configuración inerte y artefactos que faltan
 
-- [ ] T-31 · Eliminar `/actuator/health` y `/actuator/info` de `PUBLIC_PATHS`, y dejar un comentario en el código explicando por qué: Actuator lo atiende su propio handler y el filtro nunca lo ve. La prueba `actuatorHealth_withoutToken_returns200` **no se toca**: es la red de seguridad que demuestra que el cambio es inocuo (REQ-13)
-- [ ] T-32 · Eliminar `GatewayProperties.java` y la anotación `@EnableConfigurationProperties(GatewayProperties.class)` de `GatewayApplication`. Eliminar también las claves `gateway.cors-allowed-origin` y `gateway.timeout` de `application-test.yml`. **`gateway.firebase.enabled` se queda**: la usa el `@ConditionalOnProperty` de `FirebaseConfig` (REQ-14, plan §3.6)
-- [ ] T-33 · Retirar `X-User-Id` y `X-User-Plan` de `allowedHeaders` en el CORS de `application.yml`, y añadir `X-Request-Id` (REQ-NF-01, plan §3.7)
-- [ ] T-34 · Crear `src/main/resources/application-local.yml` con el override de log del plan §3.8. El perfil `local` es el activo por defecto y hoy no existe el archivo, aunque `tasks.md` de CM-104 lo marque como creado (REQ-15)
+- [x] T-31 · Eliminar `/actuator/health` y `/actuator/info` de `PUBLIC_PATHS`, y dejar un comentario en el código explicando por qué: Actuator lo atiende su propio handler y el filtro nunca lo ve. La prueba `actuatorHealth_withoutToken_returns200` **no se toca**: es la red de seguridad que demuestra que el cambio es inocuo (REQ-13)
+- [x] T-32 · Eliminar `GatewayProperties.java` y la anotación `@EnableConfigurationProperties(GatewayProperties.class)` de `GatewayApplication`. Eliminar también las claves `gateway.cors-allowed-origin` y `gateway.timeout` de `application-test.yml`. **`gateway.firebase.enabled` se queda**: la usa el `@ConditionalOnProperty` de `FirebaseConfig` (REQ-14, plan §3.6)
+- [x] T-33 · Retirar `X-User-Id` y `X-User-Plan` de `allowedHeaders` en el CORS de `application.yml`, y añadir `X-Request-Id` (REQ-NF-01, plan §3.7)
+- [x] T-34 · Crear `src/main/resources/application-local.yml` con el override de log del plan §3.8. El perfil `local` es el activo por defecto y hoy no existe el archivo, aunque `tasks.md` de CM-104 lo marque como creado (REQ-15) — *nota del 14/09/2026: la causa de fondo era `.gitignore`, que ignoraba `application-local.yml`, `.yaml` y `.properties`. Por eso el archivo de CM-104 nunca llegó al repositorio. Decidido por Juan Vela: se retiran esas reglas, porque los secretos viven en `.env` y `firebase/`, que siguen ignorados. El archivo lleva un comentario que prohíbe poner secretos*
 
 **Cierre de bloque:** `docker compose run --rm verify` en verde. Además, arranca el gateway y
 confirma que `GET /actuator/health` sigue respondiendo `200` sin token.
@@ -119,9 +119,9 @@ confirma que `GET /actuator/health` sigue respondiendo `200` sin token.
 
 ## Bloque 6 — Empaquetado: Docker
 
-- [ ] T-35 · En el `Dockerfile`, crear un usuario `cameia` sin privilegios, darle la propiedad de `/app` y añadir `USER cameia` antes del `ENTRYPOINT` (REQ-NF-06, plan §3.9)
-- [ ] T-36 · Añadir la instrucción `HEALTHCHECK` al `Dockerfile` con los mismos intervalos que ya usa Compose, para que un contenedor arrancado sin Compose también la tenga (REQ-NF-05, plan §3.9)
-- [ ] T-37 · Añadir `profiles: ["tools"]` al servicio `verify` de `docker-compose.yml`. Después comprueba las dos cosas: `docker compose config --services` sigue listando ambos, pero `docker compose up -d` arranca solo `app`, y `docker compose run --rm verify` sigue funcionando igual (REQ-NF-03, plan §3.10)
+- [x] T-35 · En el `Dockerfile`, crear un usuario `cameia` sin privilegios, darle la propiedad de `/app` y añadir `USER cameia` antes del `ENTRYPOINT` (REQ-NF-06, plan §3.9)
+- [x] T-36 · Añadir la instrucción `HEALTHCHECK` al `Dockerfile` con los mismos intervalos que ya usa Compose, para que un contenedor arrancado sin Compose también la tenga (REQ-NF-05, plan §3.9)
+- [x] T-37 · Añadir `profiles: ["tools"]` al servicio `verify` de `docker-compose.yml`. Después comprueba las dos cosas: `docker compose config --services` sigue listando ambos, pero `docker compose up -d` arranca solo `app`, y `docker compose run --rm verify` sigue funcionando igual (REQ-NF-03, plan §3.10) — *nota del 14/09/2026: sin perfil, `docker compose config --services` lista solo `app`; `verify` aparece con `--profile tools`. Es el comportamiento buscado; el texto de la tarea era impreciso*
 
 **Cierre de bloque:** construye la imagen con `docker build -t cameia-gateway .`, arráncala con
 `docker run` y confirma dos cosas: `docker ps` muestra el estado `healthy`, y
@@ -131,17 +131,17 @@ confirma que `GET /actuator/health` sigue respondiendo `200` sin token.
 
 ## Bloque 7 — Documentación
 
-- [ ] T-38 · Actualizar la tabla de brechas de `AGENTS.md` §6.5: salen las cerradas por este spec y queda solo la del token OIDC. Quitar `GatewayProperties` de la tabla de componentes de §4 (plan §5)
-- [ ] T-39 · Actualizar `docs/COMO-FUNCIONA.md`: las secciones 3, 5.3 y 7 describen defectos que este spec corrige. Deja el documento contando el estado real, no el histórico (plan §5)
-- [ ] T-40 · Añadir una nota en `specs/CM-104-base-tecnica/tasks.md` junto a las dos casillas incorrectas (`application-local.yml` y el campo `timeoutMs`), apuntando a este spec. **No desmarcar las casillas**: la nota conserva el historial y dice la verdad (REQ-14, REQ-15)
-- [ ] T-41 · Rellenar la bitácora de IA del mismo día, según `AGENTS.md` §10
+- [x] T-38 · Actualizar la tabla de brechas de `AGENTS.md` §6.5: salen las cerradas por este spec y queda solo la del token OIDC. Quitar `GatewayProperties` de la tabla de componentes de §4 (plan §5)
+- [x] T-39 · Actualizar `docs/COMO-FUNCIONA.md`: las secciones 3, 5.3 y 7 describen defectos que este spec corrige. Deja el documento contando el estado real, no el histórico (plan §5) — *nota del 14/09/2026: no solo §3, §5.3 y §7 estaban desactualizadas; también el resumen inicial, el mapa de clases, los diagramas, §4 (Docker), §5.2, §5.4 y §8. Se reescribió el documento entero y §7 pasó a listar los hallazgos abiertos*
+- [x] T-40 · Añadir una nota en `specs/CM-104-base-tecnica/tasks.md` junto a las dos casillas incorrectas (`application-local.yml` y el campo `timeoutMs`), apuntando a este spec. **No desmarcar las casillas**: la nota conserva el historial y dice la verdad (REQ-14, REQ-15)
+- [x] T-41 · Rellenar la bitácora de IA del mismo día, según `AGENTS.md` §10 — *nota del 14/09/2026: `AGENTS.md` §10 cambió de un Excel a un Markdown por spec. Se creó `..\..\Entregables\14092026_BitacoraIA_Codigo_E2.md`, sección `Bitacora_Codigo_Vela`; la carpeta `Entregables` no existía en este equipo y se creó con el archivo*
 
 ---
 
 ## Bloque 8 — Cierre
 
-- [ ] T-42 · Revisar el diff completo con `git diff develop...HEAD` y confirmar: ningún secreto real, ninguna URL de downstream escrita en el código, y el total por debajo de las 1000 líneas que fija `AGENTS.md`
-- [ ] T-43 · Recorrer el DoD del spec §6 y marcar cada casilla con la evidencia real (salida de comando o número de prueba). Si algo no pasa, no se marca
+- [x] T-42 · Revisar el diff completo con `git diff develop...HEAD` y confirmar: ningún secreto real, ninguna URL de downstream escrita en el código, y el total por debajo de las 1000 líneas que fija `AGENTS.md` — *nota del 14/09/2026: el `develop` local estaba desactualizado y mezclaba trabajo ya integrado en el PR #31, así que se revisó contra `origin/develop`. Sin secretos; sin URLs en `src/main/java`; las únicas URLs añadidas son `localhost` en el healthcheck y en pruebas. Tamaño: 18 archivos, +826/−237 (1063 si se suman las borradas; 342 son la reescritura de `docs/COMO-FUNCIONA.md`). `AGENTS.md` ya no fija el límite de 1000 líneas: queda a criterio de quien revise el PR*
+- [x] T-43 · Recorrer el DoD del spec §6 y marcar cada casilla con la evidencia real (salida de comando o número de prueba). Si algo no pasa, no se marca
 - [ ] T-44 · Abrir el PR hacia `develop` con el título `CM-104 | fix(gateway): endurecer identidad, errores y empaquetado [IA-ASISTIDO]`, y avisar en la descripción a los equipos de Cuentas y Entrevista de que ya reciben `X-User-Email`, `X-User-Roles` y `X-Request-Id` (`GW-TBD-07`)
 
 ---

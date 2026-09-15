@@ -23,6 +23,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.reactive.server.EntityExchangeResult;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
 import java.io.IOException;
@@ -290,6 +291,94 @@ class FirebaseAuthGlobalFilterTest {
                 .jsonPath("$.code").isEqualTo("AUTH_REQUIRED");
     }
 
+    // ── Caso 4b: Bearer vacío (REQ-02, prueba 7 del plan) ────────────────────
+
+    /**
+     * REQ-02: {@code Authorization: Bearer } sin token responde {@code 401} y no {@code 500}, y la
+     * solicitud no llega al microservicio.
+     */
+    @Test
+    void emptyBearerToken_returns401WithoutReachingDownstream() {
+        int requestsBefore = mockDownstream.getRequestCount();
+
+        webTestClient.get()
+                .uri("/api/v1/profiles/me")
+                .header("Authorization", "Bearer ")
+                .exchange()
+                .expectStatus().isUnauthorized()
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("AUTH_REQUIRED");
+
+        assertThat(mockDownstream.getRequestCount()).isEqualTo(requestsBefore);
+    }
+
+    // ── Caso 4c: esquema distinto de Bearer (REQ-02, prueba 8 del plan) ──────
+
+    @Test
+    void nonBearerScheme_returns401() {
+        webTestClient.get()
+                .uri("/api/v1/profiles/me")
+                .header("Authorization", "Basic xyz")
+                .exchange()
+                .expectStatus().isUnauthorized()
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("AUTH_REQUIRED");
+    }
+
+    // ── Caso 4d: Firebase rechaza el formato del token (REQ-02, T-23) ────────
+
+    /**
+     * REQ-02: si Firebase rechaza el token con {@link IllegalArgumentException} en lugar de
+     * {@link FirebaseAuthException}, el cliente igualmente recibe {@code 401}.
+     */
+    @Test
+    void firebaseIllegalArgument_returns401() throws Exception {
+        when(firebaseAuth.verifyIdToken("token-malformado"))
+                .thenThrow(new IllegalArgumentException("token malformado"));
+
+        webTestClient.get()
+                .uri("/api/v1/profiles/me")
+                .header("Authorization", "Bearer token-malformado")
+                .exchange()
+                .expectStatus().isUnauthorized()
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("AUTH_REQUIRED");
+    }
+
+    // ── Caso 4e: fallo del Gateway al verificar no es un 401 (plan §3.4) ─────
+
+    /**
+     * Plan §3.4: un fallo que no es culpa del token, como no poder hablar con Firebase, no se
+     * disfraza de {@code 401}. Es un problema del Gateway y responde {@code 500}.
+     */
+    @Test
+    void firebaseUnexpectedFailure_isNotTreatedAsTokenRejection() throws Exception {
+        when(firebaseAuth.verifyIdToken("token-sin-red"))
+                .thenThrow(new IllegalStateException("sin conexión con Firebase"));
+
+        webTestClient.get()
+                .uri("/api/v1/profiles/me")
+                .header("Authorization", "Bearer token-sin-red")
+                .exchange()
+                .expectStatus().isEqualTo(500);
+    }
+
+    // ── Caso 4f: el 401 devuelve el X-Request-Id (REQ-09, T-24a) ─────────────
+
+    /**
+     * REQ-09: la respuesta {@code 401} lleva el mismo {@code X-Request-Id} que envió el cliente,
+     * con un único valor.
+     */
+    @Test
+    void unauthorizedResponse_includesRequestId() {
+        webTestClient.get()
+                .uri("/api/v1/profiles/me")
+                .header("X-Request-Id", "abc")
+                .exchange()
+                .expectStatus().isUnauthorized()
+                .expectHeader().values("X-Request-Id", values -> assertThat(values).containsExactly("abc"));
+    }
+
     // ── Caso 5: POST /webhooks/wompi sin token → llega al downstream ─────────
 
     /**
@@ -336,11 +425,41 @@ class FirebaseAuthGlobalFilterTest {
                 .header("Authorization", "Bearer token-trazado")
                 .header("X-Request-Id", "abc")
                 .exchange()
-                .expectStatus().isOk();
+                .expectStatus().isOk()
+                // el cliente también recibe el id, aunque el microservicio no lo devuelva
+                .expectHeader().values("X-Request-Id", values -> assertThat(values).containsExactly("abc"));
 
         RecordedRequest req = mockDownstream.takeRequest();
         // un solo valor: se fija con set, no se añade un segundo
         assertThat(req.getHeaders().values("X-Request-Id")).containsExactly("abc");
+    }
+
+    // ── Caso 7b: el microservicio devuelve el mismo X-Request-Id ─────────────
+
+    /**
+     * REQ-09: si el microservicio devuelve su propio {@code X-Request-Id}, el cliente recibe un solo
+     * valor y no dos (el que fijó el filtro más el del microservicio).
+     */
+    @Test
+    void downstreamEchoedRequestId_isNotDuplicatedInResponse() throws Exception {
+        FirebaseToken token = mockToken("uid-eco", Map.of());
+        when(firebaseAuth.verifyIdToken("token-eco")).thenReturn(token);
+
+        mockDownstream.enqueue(new MockResponse().setResponseCode(200)
+                .setHeader("X-Request-Id", "abc").setBody("ok"));
+
+        EntityExchangeResult<byte[]> result = webTestClient.get()
+                .uri("/api/v1/profiles/me")
+                .header("Authorization", "Bearer token-eco")
+                .header("X-Request-Id", "abc")
+                .exchange()
+                .expectBody().returnResult();
+
+        // se consume antes de afirmar: si la prueba falla, no deja la solicitud en la cola compartida
+        mockDownstream.takeRequest();
+
+        assertThat(result.getStatus().value()).isEqualTo(200);
+        assertThat(result.getResponseHeaders().get("X-Request-Id")).containsExactly("abc");
     }
 
     // ── Caso 8: sin X-Request-Id el gateway genera uno (REQ-09) ─────────────

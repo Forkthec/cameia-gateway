@@ -44,7 +44,7 @@ Marcar cada tarea al completarla. No pasar a la siguiente sección hasta que
   - [x] CORS global (REQ-NF-01)
   - [x] Actuator (`health,info` expuestos sin auth)
   - [x] Logging raíz y paquete gateway
-- [x] Crear `src/main/resources/application-local.yml` (overrides vacíos, placeholder)
+- [x] Crear `src/main/resources/application-local.yml` (overrides vacíos, placeholder) — *nota del 14/09/2026: el archivo nunca llegó al repositorio, porque `.gitignore` ignoraba `application-local.yml`. Se crea y se versiona en `specs/CM-104-correcciones` (T-34, REQ-15). La casilla se conserva para no reescribir el historial*
 - [x] Crear `.env.example` con todas las variables del §4 del spec + §6 del plan,
   con comentarios descriptivos por sección
 - [x] Verificar que `.env` está en `.gitignore` (añadir si no está)
@@ -59,7 +59,7 @@ Marcar cada tarea al completarla. No pasar a la siguiente sección hasta que
   - [x] `@ConfigurationProperties("gateway")`
   - [x] `@Validated`
   - [x] Campo `corsAllowedOrigin` con `@NotBlank`
-  - [x] Campo `timeoutMs` con `@NotNull`
+  - [x] Campo `timeoutMs` con `@NotNull` — *nota del 14/09/2026: el campo real era `timeout` (`Duration`), no `timeoutMs`. Además la clase nunca se enlazó a nada; se eliminó por inerte en `specs/CM-104-correcciones` (T-32, REQ-14). La casilla se conserva para no reescribir el historial*
 - [x] Crear `FirebaseConfig.java` en `config/`
   - [x] Inicializa `FirebaseApp` en `@PostConstruct` usando `GOOGLE_APPLICATION_CREDENTIALS`
     y `FIREBASE_PROJECT_ID`

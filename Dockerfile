@@ -15,6 +15,15 @@ WORKDIR /app
 
 COPY --from=builder /app/target/*.jar app.jar
 
+# REQ-NF-06 — usuario sin privilegios. La app no escribe en disco; el chown cubre /app.
+RUN addgroup -S cameia && adduser -S cameia -G cameia && chown -R cameia:cameia /app
+USER cameia
+
 EXPOSE 8080
+
+# REQ-NF-05 — la imagen trae su propia comprobación, no solo Compose.
+# Mismo comando e intervalos que el healthcheck de docker-compose.yml. wget viene en alpine.
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=12 \
+  CMD wget -qO- http://localhost:8080/actuator/health || exit 1
 
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]

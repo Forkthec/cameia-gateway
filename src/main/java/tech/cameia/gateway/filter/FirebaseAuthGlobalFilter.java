@@ -42,7 +42,8 @@ import static java.util.stream.Collectors.joining;
  *       microservicio no debe creer que lo hay.</li>
  * </ul>
  *
- * <p>En los dos casos garantiza un {@code X-Request-Id} en la solicitud reenviada.
+ * <p>En los dos casos garantiza un {@code X-Request-Id} en la solicitud reenviada y en la respuesta
+ * al cliente, con el mismo valor.
  *
  * <p>Las cabeceras se fijan siempre con {@code set} y nunca con {@code header(...)}: este último
  * <em>añade</em> un segundo valor cuando el cliente ya envió la misma cabecera, y deja indefinido
@@ -82,6 +83,9 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
     /** Nombre del custom claim de Firebase con los roles del usuario. */
     static final String ROLES_CLAIM = "roles";
 
+    /** Esquema de la cabecera {@code Authorization} que lleva el ID Token de Firebase, con su espacio. */
+    private static final String BEARER_PREFIX = "Bearer ";
+
     /**
      * Cabeceras que solo el Gateway emite. Cualquier valor que llegue del cliente con uno de estos
      * nombres se descarta antes de reenviar, tanto en rutas protegidas como públicas (REQ-07, REQ-10).
@@ -91,15 +95,17 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
     );
 
     /**
-     * Rutas que no exigen token de Firebase (Caso B). La comparación es exacta, sin comodines.
+     * Rutas del Gateway que no exigen token de Firebase (Caso B). La comparación es exacta, sin
+     * comodines.
      *
-     * <p>Las entradas de Actuator son inertes: Actuator lo atiende su propio handler y este filtro
-     * nunca lo ve. Se retiran en T-31 (REQ-13).
+     * <p>Aquí no van {@code /actuator/health} ni {@code /actuator/info}, y no es un olvido (REQ-13).
+     * Actuator se atiende con su propio {@code HandlerMapping} (orden {@code -100}), antes que las
+     * rutas del Gateway (orden {@code 1}), así que este filtro nunca ve esas solicitudes: son
+     * públicas por arquitectura, no por esta lista. Una entrada aquí aparentaría controlar algo que
+     * no controla. La prueba {@code actuatorHealth_withoutToken_returns200} lo demuestra.
      */
     private static final Set<String> PUBLIC_PATHS = Set.of(
-            "/webhooks/wompi",
-            "/actuator/health",
-            "/actuator/info"
+            "/webhooks/wompi"
     );
 
     private final FirebaseAuth firebaseAuth;
@@ -136,24 +142,41 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         // REQ-09: se resuelve antes de bifurcar, para que exista en rutas públicas y protegidas
         String requestId = resolveRequestId(exchange);
+        exposeRequestId(exchange, requestId);
         String path = exchange.getRequest().getPath().value();
 
         if (isPublicPath(path)) {
             return chain.filter(withoutIdentity(exchange, requestId));
         }
 
-        String authHeader = exchange.getRequest().getHeaders().getFirst("Authorization");
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+        String idToken = extractIdToken(exchange);
+        if (idToken == null) {
+            // REQ-02: se rechaza antes de llamar a Firebase, que con un token vacío lanzaría otra excepción
             return writeUnauthorized(exchange, "Token de acceso requerido", requestId);
         }
 
-        String idToken = authHeader.substring(7);
-
+        // El rechazo se captura antes del flatMap: así solo cubre la verificación del token, y un
+        // fallo al reenviar al microservicio nunca se confunde con un token inválido (plan §3.4)
         return Mono.fromCallable(() -> firebaseAuth.verifyIdToken(idToken))
                 .subscribeOn(Schedulers.boundedElastic())
-                .flatMap(decodedToken -> chain.filter(withIdentity(exchange, decodedToken, requestId)))
-                .onErrorResume(FirebaseAuthException.class,
-                        e -> writeUnauthorized(exchange, "Token de acceso inválido", requestId));
+                // tras escribir el 401 se completa vacío: el flatMap no corre y nada se reenvía
+                .onErrorResume(this::isTokenRejection,
+                        e -> writeUnauthorized(exchange, "Token de acceso inválido", requestId)
+                                .then(Mono.<FirebaseToken>empty()))
+                .flatMap(decodedToken -> chain.filter(withIdentity(exchange, decodedToken, requestId)));
+    }
+
+    /**
+     * Decide si un fallo de la verificación es culpa del token y merece {@code 401} (REQ-02).
+     *
+     * <p>No abarca {@link Throwable} en bruto: un fallo de red al descargar las claves públicas de
+     * Firebase es un problema del Gateway, no del cliente, y debe seguir llegando al manejador global.
+     *
+     * @param error excepción lanzada al verificar el ID Token
+     * @return {@code true} si es {@link FirebaseAuthException} o {@link IllegalArgumentException}
+     */
+    private boolean isTokenRejection(Throwable error) {
+        return error instanceof FirebaseAuthException || error instanceof IllegalArgumentException;
     }
 
     /**
@@ -176,6 +199,49 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
             return UUID.randomUUID().toString();
         }
         return incoming;
+    }
+
+    /**
+     * Devuelve el {@code X-Request-Id} en la respuesta al cliente, con un único valor (REQ-09).
+     *
+     * <p>Se fija dos veces, y las dos hacen falta:
+     * <ol>
+     *   <li>De inmediato, para que {@code GlobalErrorHandler} lo encuentre y registre el error con
+     *       el mismo id que recibió el microservicio.</li>
+     *   <li>Justo antes de enviar la respuesta, porque el Gateway <em>añade</em> las cabeceras que
+     *       devuelve el microservicio: si este trae su propio {@code X-Request-Id}, el cliente
+     *       recibiría dos valores.</li>
+     * </ol>
+     *
+     * @param exchange  intercambio HTTP de la solicitud entrante
+     * @param requestId identificador de trazabilidad ya resuelto
+     */
+    private void exposeRequestId(ServerWebExchange exchange, String requestId) {
+        HttpHeaders responseHeaders = exchange.getResponse().getHeaders();
+        responseHeaders.set(X_REQUEST_ID, requestId);
+        exchange.getResponse().beforeCommit(() -> {
+            responseHeaders.set(X_REQUEST_ID, requestId); // set reemplaza el valor del microservicio
+            return Mono.empty();
+        });
+    }
+
+    /**
+     * Extrae el ID Token de la cabecera {@code Authorization} sin verificarlo (REQ-02).
+     *
+     * <p>El token se recorta con {@code trim()}: {@code Bearer } seguido solo de espacios es un token
+     * vacío y no debe llegar a Firebase.
+     *
+     * @param exchange intercambio HTTP de la solicitud entrante
+     * @return el token sin el prefijo {@code Bearer }, o {@code null} si falta la cabecera, el esquema
+     *         no es {@code Bearer} o el token queda vacío
+     */
+    private String extractIdToken(ServerWebExchange exchange) {
+        String authHeader = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
+        if (authHeader == null || !authHeader.startsWith(BEARER_PREFIX)) {
+            return null;
+        }
+        String idToken = authHeader.substring(BEARER_PREFIX.length()).trim();
+        return idToken.isEmpty() ? null : idToken;
     }
 
     /**
@@ -277,7 +343,8 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
      * no llega al microservicio (REQ-02).
      *
      * <p>Registra el rechazo en nivel {@code WARN} con su {@code X-Request-Id} (REQ-09). Nunca
-     * registra el token ni la cabecera {@code Authorization}.
+     * registra el token ni la cabecera {@code Authorization}. La cabecera {@code X-Request-Id} de la
+     * respuesta ya la fijó {@code filter(...)}.
      *
      * @param exchange  intercambio HTTP de la solicitud entrante
      * @param message   mensaje en español para el cuerpo de la respuesta; debe ser un texto fijo,
