@@ -83,7 +83,7 @@ docker compose run --rm verify
 
 ## Bloque 3 — Rechazo: Bearer vacío y errores de Firebase
 
-- [ ] T-22 · En `FirebaseAuthGlobalFilter`, extraer el token con `trim()` y responder `401` si queda vacío, **antes** de llamar a Firebase. Hoy `Authorization: Bearer ` (con el valor vacío) llega a `verifyIdToken("")`, que lanza `IllegalArgumentException` y termina en `500` (REQ-02, plan §3.4)
+- [x] T-22 · En `FirebaseAuthGlobalFilter`, extraer el token con `trim()` y responder `401` si queda vacío, **antes** de llamar a Firebase. Hoy `Authorization: Bearer ` (con el valor vacío) llega a `verifyIdToken("")`, que lanza `IllegalArgumentException` y termina en `500` (REQ-02, plan §3.4)
 - [ ] T-23 · Añadir el método privado `isTokenRejection(Throwable)` que devuelva `true` para `FirebaseAuthException` e `IllegalArgumentException`, y usarlo en el `onErrorResume`. **No capturar `Throwable` en bruto**: un fallo de red al hablar con Firebase es problema del Gateway y debe seguir siendo `500` (REQ-02, plan §3.4)
 - [ ] T-24 · Añadir dos pruebas: `Authorization: Bearer ` (vacío) → `401` con `code: AUTH_REQUIRED`; `Authorization: Basic xyz` → `401` (pruebas 7 y 8 del plan)
 - [ ] T-24a · Incluir la cabecera `X-Request-Id` en toda respuesta `401` del filtro, con el mismo valor que resolvió `resolveRequestId`, fijada con `set`. Añadir una prueba: sin token y con `X-Request-Id: abc` → `401` con la cabecera de respuesta `X-Request-Id: abc` (REQ-09, plan §1) — *añadida el 12/09/2026: el plan lo pedía y ninguna tarea lo cubría*

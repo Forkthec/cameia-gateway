@@ -82,6 +82,9 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
     /** Nombre del custom claim de Firebase con los roles del usuario. */
     static final String ROLES_CLAIM = "roles";
 
+    /** Esquema de la cabecera {@code Authorization} que lleva el ID Token de Firebase, con su espacio. */
+    private static final String BEARER_PREFIX = "Bearer ";
+
     /**
      * Cabeceras que solo el Gateway emite. Cualquier valor que llegue del cliente con uno de estos
      * nombres se descarta antes de reenviar, tanto en rutas protegidas como públicas (REQ-07, REQ-10).
@@ -142,12 +145,11 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
             return chain.filter(withoutIdentity(exchange, requestId));
         }
 
-        String authHeader = exchange.getRequest().getHeaders().getFirst("Authorization");
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+        String idToken = extractIdToken(exchange);
+        if (idToken == null) {
+            // REQ-02: se rechaza antes de llamar a Firebase, que con un token vacío lanzaría otra excepción
             return writeUnauthorized(exchange, "Token de acceso requerido", requestId);
         }
-
-        String idToken = authHeader.substring(7);
 
         return Mono.fromCallable(() -> firebaseAuth.verifyIdToken(idToken))
                 .subscribeOn(Schedulers.boundedElastic())
@@ -176,6 +178,25 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
             return UUID.randomUUID().toString();
         }
         return incoming;
+    }
+
+    /**
+     * Extrae el ID Token de la cabecera {@code Authorization} sin verificarlo (REQ-02).
+     *
+     * <p>El token se recorta con {@code trim()}: {@code Bearer } seguido solo de espacios es un token
+     * vacío y no debe llegar a Firebase.
+     *
+     * @param exchange intercambio HTTP de la solicitud entrante
+     * @return el token sin el prefijo {@code Bearer }, o {@code null} si falta la cabecera, el esquema
+     *         no es {@code Bearer} o el token queda vacío
+     */
+    private String extractIdToken(ServerWebExchange exchange) {
+        String authHeader = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
+        if (authHeader == null || !authHeader.startsWith(BEARER_PREFIX)) {
+            return null;
+        }
+        String idToken = authHeader.substring(BEARER_PREFIX.length()).trim();
+        return idToken.isEmpty() ? null : idToken;
     }
 
     /**
