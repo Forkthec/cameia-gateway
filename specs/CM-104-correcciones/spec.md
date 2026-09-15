@@ -391,9 +391,16 @@ cambios. `GATEWAY_OIDC_ENABLED` pertenece al spec de OIDC.
 | `GW-TBD-07` | Qué hace Cuentas si `X-User-Email` viene ausente, caso posible con métodos de login sin correo | Contrato de entrada de Cuentas | Cuentas + arquitectura |
 | `GW-TBD-08` | Qué microservicio aplica los límites por plan | Ninguno sobre el Gateway hoy | Arquitectura. Por ahora se documenta como "otro microservicio", sin asumir que sea Cuentas |
 | `GW-TBD-09` | Si `roles` y `plan` son redundantes, cuál consume cada microservicio | Contrato de salida | Arquitectura. El Gateway propaga ambos sin deducir uno del otro (`REQ-08`) |
+| `GW-TBD-10` | Estados de error que no están en el catálogo de §2.4. Una `ResponseStatusException` conserva su estado, pero el cuerpo sale como `INTERNAL_ERROR`: `POST /actuator/health` responde `405` con `{"code":"INTERNAL_ERROR"}` | Cuerpo de error incoherente con su estado. Sin impacto en healthchecks, que usan `GET` | Arquitectura. Ampliar el catálogo o definir un código genérico exige cambiar §2.4 |
+| `GW-TBD-11` | Todo endpoint de Actuator expuesto es público: Actuator se atiende antes que las rutas del Gateway y el filtro de autenticación no lo ve. La lista sale de `MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE`, y `GET /actuator` lista los endpoints con URLs absolutas | Con `env` en la variable, `/actuator/env` respondió `200` sin token, con perfiles y nombres de propiedades (valores ocultos). Hoy ningún despliegue la amplía | Arquitectura. Candidato al spec de OIDC/despliegue: fijar `health,info` en YAML en vez de leerlos del entorno y valorar desactivar `/actuator` |
 
-`GW-TBD-06` a `GW-TBD-09` **no bloquean este spec**: ninguno cambia el código que aquí se pide.
+`GW-TBD-06` a `GW-TBD-11` **no bloquean este spec**: ninguno cambia el código que aquí se pide.
 Ninguno se cierra escribiendo código.
+
+> `GW-TBD-10` y `GW-TBD-11` se añadieron el 14/09/2026, verificados con una prueba de sondeo
+> temporal durante el bloque 4 (no versionada): orden de los `HandlerMapping` (Actuator `-100`,
+> rutas del Gateway `1`), `GET /actuator/health` con token basura → `200` sin llamar a Firebase,
+> `POST /actuator/health` → `405 INTERNAL_ERROR`.
 
 ---
 

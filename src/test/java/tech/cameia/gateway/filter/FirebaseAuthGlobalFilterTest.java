@@ -23,6 +23,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.reactive.server.EntityExchangeResult;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
 import java.io.IOException;
@@ -424,11 +425,41 @@ class FirebaseAuthGlobalFilterTest {
                 .header("Authorization", "Bearer token-trazado")
                 .header("X-Request-Id", "abc")
                 .exchange()
-                .expectStatus().isOk();
+                .expectStatus().isOk()
+                // el cliente también recibe el id, aunque el microservicio no lo devuelva
+                .expectHeader().values("X-Request-Id", values -> assertThat(values).containsExactly("abc"));
 
         RecordedRequest req = mockDownstream.takeRequest();
         // un solo valor: se fija con set, no se añade un segundo
         assertThat(req.getHeaders().values("X-Request-Id")).containsExactly("abc");
+    }
+
+    // ── Caso 7b: el microservicio devuelve el mismo X-Request-Id ─────────────
+
+    /**
+     * REQ-09: si el microservicio devuelve su propio {@code X-Request-Id}, el cliente recibe un solo
+     * valor y no dos (el que fijó el filtro más el del microservicio).
+     */
+    @Test
+    void downstreamEchoedRequestId_isNotDuplicatedInResponse() throws Exception {
+        FirebaseToken token = mockToken("uid-eco", Map.of());
+        when(firebaseAuth.verifyIdToken("token-eco")).thenReturn(token);
+
+        mockDownstream.enqueue(new MockResponse().setResponseCode(200)
+                .setHeader("X-Request-Id", "abc").setBody("ok"));
+
+        EntityExchangeResult<byte[]> result = webTestClient.get()
+                .uri("/api/v1/profiles/me")
+                .header("Authorization", "Bearer token-eco")
+                .header("X-Request-Id", "abc")
+                .exchange()
+                .expectBody().returnResult();
+
+        // se consume antes de afirmar: si la prueba falla, no deja la solicitud en la cola compartida
+        mockDownstream.takeRequest();
+
+        assertThat(result.getStatus().value()).isEqualTo(200);
+        assertThat(result.getResponseHeaders().get("X-Request-Id")).containsExactly("abc");
     }
 
     // ── Caso 8: sin X-Request-Id el gateway genera uno (REQ-09) ─────────────

@@ -94,12 +94,12 @@ docker compose run --rm verify
 
 ## Bloque 4 — Errores: catálogo cerrado y traducción de fallos
 
-- [ ] T-25 · En `GlobalErrorHandler`, crear el catálogo fijo de códigos y mensajes del spec §2.4 (`AUTH_REQUIRED`, `NOT_FOUND`, `BAD_GATEWAY`, `SERVICE_UNAVAILABLE`, `GATEWAY_TIMEOUT`, `INTERNAL_ERROR`) como constante (REQ-11)
-- [ ] T-26 · Reescribir `resolveStatus` con el mapeo del plan §3.5: `TimeoutException` → `504`; `ConnectException` y `UnknownHostException` → `503`; excepciones de `reactor.netty` → `502`; `ResponseStatusException` conserva su estado; el resto → `500` (REQ-11)
-- [ ] T-27 · Construir el cuerpo de la respuesta desde el catálogo y **eliminar el uso de `ex.getMessage()`**. Con el mensaje ya fijo, el método `sanitize` sobra: bórralo (REQ-12)
-- [ ] T-28 · Registrar la excepción original en el log con el `X-Request-Id` de la solicitud, en nivel `ERROR`. El detalle va al log, nunca a la respuesta (REQ-12)
-- [ ] T-29 · Crear `GatewayErrorMappingTest` con `@DynamicPropertySource` que baje el timeout a `300ms`, y dos pruebas: destino que no responde → `504`; destino en un puerto cerrado → `503`. Para el puerto cerrado, abre un `ServerSocket` en el puerto 0, lee el puerto asignado y ciérralo antes de arrancar el contexto (pruebas 11 y 12 del plan)
-- [ ] T-30 · Añadir una prueba que afirme que ningún cuerpo de error contiene `Exception`, `java.` ni el host del destino (prueba 13 del plan)
+- [x] T-25 · En `GlobalErrorHandler`, crear el catálogo fijo de códigos y mensajes del spec §2.4 (`AUTH_REQUIRED`, `NOT_FOUND`, `BAD_GATEWAY`, `SERVICE_UNAVAILABLE`, `GATEWAY_TIMEOUT`, `INTERNAL_ERROR`) como constante (REQ-11) — *nota del 14/09/2026: el `401` normal lo escribe `FirebaseAuthGlobalFilter` y nunca llega al manejador. `AUTH_REQUIRED` se deja en el catálogo como red de seguridad, para que una `ResponseStatusException(401)` no salga con código `INTERNAL_ERROR`. Decidido por Juan Vela*
+- [x] T-26 · Reescribir `resolveStatus` con el mapeo del plan §3.5: `TimeoutException` → `504`; `ConnectException` y `UnknownHostException` → `503`; excepciones de `reactor.netty` → `502`; `ResponseStatusException` conserva su estado; el resto → `500` (REQ-11)
+- [x] T-27 · Construir el cuerpo de la respuesta desde el catálogo y **eliminar el uso de `ex.getMessage()`**. Con el mensaje ya fijo, el método `sanitize` sobra: bórralo (REQ-12)
+- [x] T-28 · Registrar la excepción original en el log con el `X-Request-Id` de la solicitud, en nivel `ERROR`. El detalle va al log, nunca a la respuesta (REQ-12) — *nota del 14/09/2026: el manejador recibe el `exchange` original y no ve el id que generó el filtro. Decidido por Juan Vela: `FirebaseAuthGlobalFilter.exposeRequestId` fija `X-Request-Id` en la respuesta al inicio y el manejador lo lee de ahí (si el filtro no corrió, como en un `404`, usa el del cliente o genera uno). El filtro lo vuelve a fijar en `beforeCommit`, porque el Gateway añade el `X-Request-Id` que devuelva el microservicio y el cliente recibía dos valores (prueba `downstreamEchoedRequestId_isNotDuplicatedInResponse`)*
+- [x] T-29 · Crear `GatewayErrorMappingTest` con `@DynamicPropertySource` que baje el timeout a `300ms`, y dos pruebas: destino que no responde → `504`; destino en un puerto cerrado → `503`. Para el puerto cerrado, abre un `ServerSocket` en el puerto 0, lee el puerto asignado y ciérralo antes de arrancar el contexto (pruebas 11 y 12 del plan)
+- [x] T-30 · Añadir una prueba que afirme que ningún cuerpo de error contiene `Exception`, `java.` ni el host del destino (prueba 13 del plan)
 
 **Cierre de bloque:** `docker compose run --rm verify` en verde.
 
