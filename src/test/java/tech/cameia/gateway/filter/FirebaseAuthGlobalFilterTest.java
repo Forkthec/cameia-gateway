@@ -290,6 +290,94 @@ class FirebaseAuthGlobalFilterTest {
                 .jsonPath("$.code").isEqualTo("AUTH_REQUIRED");
     }
 
+    // ── Caso 4b: Bearer vacío (REQ-02, prueba 7 del plan) ────────────────────
+
+    /**
+     * REQ-02: {@code Authorization: Bearer } sin token responde {@code 401} y no {@code 500}, y la
+     * solicitud no llega al microservicio.
+     */
+    @Test
+    void emptyBearerToken_returns401WithoutReachingDownstream() {
+        int requestsBefore = mockDownstream.getRequestCount();
+
+        webTestClient.get()
+                .uri("/api/v1/profiles/me")
+                .header("Authorization", "Bearer ")
+                .exchange()
+                .expectStatus().isUnauthorized()
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("AUTH_REQUIRED");
+
+        assertThat(mockDownstream.getRequestCount()).isEqualTo(requestsBefore);
+    }
+
+    // ── Caso 4c: esquema distinto de Bearer (REQ-02, prueba 8 del plan) ──────
+
+    @Test
+    void nonBearerScheme_returns401() {
+        webTestClient.get()
+                .uri("/api/v1/profiles/me")
+                .header("Authorization", "Basic xyz")
+                .exchange()
+                .expectStatus().isUnauthorized()
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("AUTH_REQUIRED");
+    }
+
+    // ── Caso 4d: Firebase rechaza el formato del token (REQ-02, T-23) ────────
+
+    /**
+     * REQ-02: si Firebase rechaza el token con {@link IllegalArgumentException} en lugar de
+     * {@link FirebaseAuthException}, el cliente igualmente recibe {@code 401}.
+     */
+    @Test
+    void firebaseIllegalArgument_returns401() throws Exception {
+        when(firebaseAuth.verifyIdToken("token-malformado"))
+                .thenThrow(new IllegalArgumentException("token malformado"));
+
+        webTestClient.get()
+                .uri("/api/v1/profiles/me")
+                .header("Authorization", "Bearer token-malformado")
+                .exchange()
+                .expectStatus().isUnauthorized()
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("AUTH_REQUIRED");
+    }
+
+    // ── Caso 4e: fallo del Gateway al verificar no es un 401 (plan §3.4) ─────
+
+    /**
+     * Plan §3.4: un fallo que no es culpa del token, como no poder hablar con Firebase, no se
+     * disfraza de {@code 401}. Es un problema del Gateway y responde {@code 500}.
+     */
+    @Test
+    void firebaseUnexpectedFailure_isNotTreatedAsTokenRejection() throws Exception {
+        when(firebaseAuth.verifyIdToken("token-sin-red"))
+                .thenThrow(new IllegalStateException("sin conexión con Firebase"));
+
+        webTestClient.get()
+                .uri("/api/v1/profiles/me")
+                .header("Authorization", "Bearer token-sin-red")
+                .exchange()
+                .expectStatus().isEqualTo(500);
+    }
+
+    // ── Caso 4f: el 401 devuelve el X-Request-Id (REQ-09, T-24a) ─────────────
+
+    /**
+     * REQ-09: la respuesta {@code 401} lleva el mismo {@code X-Request-Id} que envió el cliente,
+     * con un único valor.
+     */
+    @Test
+    void unauthorizedResponse_includesRequestId() {
+        webTestClient.get()
+                .uri("/api/v1/profiles/me")
+                .header("X-Request-Id", "abc")
+                .exchange()
+                .expectStatus().isUnauthorized()
+                .expectHeader().values("X-Request-Id", values -> assertThat(values).containsExactly("abc"));
+    }
+
     // ── Caso 5: POST /webhooks/wompi sin token → llega al downstream ─────────
 
     /**

@@ -151,11 +151,28 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
             return writeUnauthorized(exchange, "Token de acceso requerido", requestId);
         }
 
+        // El rechazo se captura antes del flatMap: así solo cubre la verificación del token, y un
+        // fallo al reenviar al microservicio nunca se confunde con un token inválido (plan §3.4)
         return Mono.fromCallable(() -> firebaseAuth.verifyIdToken(idToken))
                 .subscribeOn(Schedulers.boundedElastic())
-                .flatMap(decodedToken -> chain.filter(withIdentity(exchange, decodedToken, requestId)))
-                .onErrorResume(FirebaseAuthException.class,
-                        e -> writeUnauthorized(exchange, "Token de acceso inválido", requestId));
+                // tras escribir el 401 se completa vacío: el flatMap no corre y nada se reenvía
+                .onErrorResume(this::isTokenRejection,
+                        e -> writeUnauthorized(exchange, "Token de acceso inválido", requestId)
+                                .then(Mono.<FirebaseToken>empty()))
+                .flatMap(decodedToken -> chain.filter(withIdentity(exchange, decodedToken, requestId)));
+    }
+
+    /**
+     * Decide si un fallo de la verificación es culpa del token y merece {@code 401} (REQ-02).
+     *
+     * <p>No abarca {@link Throwable} en bruto: un fallo de red al descargar las claves públicas de
+     * Firebase es un problema del Gateway, no del cliente, y debe seguir llegando al manejador global.
+     *
+     * @param error excepción lanzada al verificar el ID Token
+     * @return {@code true} si es {@link FirebaseAuthException} o {@link IllegalArgumentException}
+     */
+    private boolean isTokenRejection(Throwable error) {
+        return error instanceof FirebaseAuthException || error instanceof IllegalArgumentException;
     }
 
     /**
@@ -297,13 +314,14 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
      * Responde {@code 401} con código {@code AUTH_REQUIRED} y termina el procesamiento: la solicitud
      * no llega al microservicio (REQ-02).
      *
-     * <p>Registra el rechazo en nivel {@code WARN} con su {@code X-Request-Id} (REQ-09). Nunca
-     * registra el token ni la cabecera {@code Authorization}.
+     * <p>Registra el rechazo en nivel {@code WARN} con su {@code X-Request-Id} (REQ-09), y devuelve
+     * ese mismo identificador en la cabecera de la respuesta para que el cliente pueda citarlo.
+     * Nunca registra el token ni la cabecera {@code Authorization}.
      *
      * @param exchange  intercambio HTTP de la solicitud entrante
      * @param message   mensaje en español para el cuerpo de la respuesta; debe ser un texto fijo,
      *                  nunca el mensaje de una excepción
-     * @param requestId identificador de trazabilidad que se incluye en el log
+     * @param requestId identificador de trazabilidad que se incluye en el log y en la respuesta
      * @return la escritura de la respuesta {@code 401}
      */
     private Mono<Void> writeUnauthorized(ServerWebExchange exchange, String message, String requestId) {
@@ -316,6 +334,7 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
 
         exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
         exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_JSON);
+        exchange.getResponse().getHeaders().set(X_REQUEST_ID, requestId); // REQ-09: set, un solo valor
 
         DataBuffer buffer = exchange.getResponse().bufferFactory().wrap(bytes);
         return exchange.getResponse().writeWith(Mono.just(buffer));
