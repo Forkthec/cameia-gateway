@@ -143,6 +143,7 @@ exception      independiente
 | `/api/v1/voice-service/**` | `${CAMEIA_VOZ_URL}` | A | Declarado, Sprint 2 |
 | `/api/v1/audit/**` | `${CAMEIA_AUDITORIA_URL}` | A | Declarado, Sprint 2/3 |
 | `POST /webhooks/wompi` | `${CAMEIA_CUENTAS_URL}` | B | Declarado, operativo en Sprint 3 |
+| `POST /api/v1/users` (registro) | `${CAMEIA_CUENTAS_URL}` | B (decidido 15/09/2026, `GW-TBD-15`) | En spec `specs/CM-14-Registro-usuario/`. Sin implementar |
 | `/actuator/health` | el gateway mismo | — | Público, no se enruta |
 | `/actuator/info` | el gateway mismo | — | Público, no se enruta |
 
@@ -153,6 +154,13 @@ La ruta de cuentas es `/api/v1/users/**`, no `/api/v1/accounts/**`: el valor que
 Añadir una ruta nueva **no requiere código Java**, solo editar `application.yml` y abrir PR. Lo que sí requiere es declarar en la spec si es Caso A o Caso B.
 
 **Excepción: abrir una ruta al público sí exige recompilar.** Las rutas de Caso B viven en la constante `PUBLIC_PATHS` del filtro, no en el YAML. Una ruta nueva que no se añada ahí queda protegida por omisión: nunca se abre sola. La comparación es de texto exacto, sin comodines.
+
+**La lista de rutas públicas todavía no está definida.** A la fecha (15/09/2026) el equipo no tiene claro qué endpoints de la plataforma serán públicos: la lista se construye HU por HU, a medida que cada spec lo decida. Mientras eso ocurre:
+
+- Ninguna ruta se da por pública porque "parezca" pública (registro, health, webhooks). Si su spec no la declara Caso B, es Caso A.
+- Cada entrada nueva en `PUBLIC_PATHS` sale de un spec aprobado y llega con su prueba. Una entrada sin spec se revierte, no se documenta a posteriori.
+- Las rutas candidatas se registran en el spec que las propone y en la tabla de arriba como "propuesto", no como activas.
+- Un endpoint público **solo para desarrollo** (por ejemplo, los health de cada microservicio) no es una ruta pública de la plataforma: se trata aparte y nunca puede quedar activo en despliegue. Está propuesto en `specs/CM-14-Registro-usuario/`, sin implementar.
 
 ---
 
@@ -180,7 +188,7 @@ La llamada a `FirebaseAuth.verifyIdToken()` es bloqueante, así que se ejecuta e
 4. **Eliminar** cualquier header `X-User-*` que venga del cliente: no hay usuario autenticado y el downstream no debe creer que lo hay.
 5. Reenviar la petición.
 
-Hoy las rutas de Caso B viven en la constante `PUBLIC_PATHS` del filtro, y la única es `/webhooks/wompi`. Actuator no va en esa lista: lo atiende su propio `HandlerMapping` (orden `-100`) antes que las rutas del Gateway (orden `1`), así que el filtro nunca lo ve y todo endpoint de Actuator expuesto es público (`GW-TBD-11`).
+Hoy las rutas de Caso B viven en la constante `PUBLIC_PATHS` del filtro, y en `develop` la única es `/webhooks/wompi`. La lista no es definitiva: crece con cada spec que declare una ruta Caso B (§5). Actuator no va en esa lista: lo atiende su propio `HandlerMapping` (orden `-100`) antes que las rutas del Gateway (orden `1`), así que el filtro nunca lo ve y todo endpoint de Actuator expuesto es público (`GW-TBD-11`).
 
 > **La única diferencia entre el Caso A y el Caso B es si el gateway valida un token de Firebase en la entrada. El paso OIDC hacia el microservicio ocurre en ambos casos, sin excepciones.**
 

@@ -37,10 +37,13 @@ docker compose run --rm verify
 > abierto del spec §6 que la desbloquea. **No escribas comandos `gcloud` en el repositorio como si
 > se hubieran ejecutado** (`AGENTS.md` §0.3).
 
-- [ ] T-INF-01 · Definir con arquitectura la identidad con la que corre el Gateway en Cloud Run: nombre de la service account y proyecto. Anotar la decisión en el spec, no en el código ⛔ `GW-TBD-10`
-- [ ] T-INF-02 · Conceder `roles/run.invoker` de **cada** microservicio destino a esa identidad. Sin este paso el destino responde `403` aunque el token sea correcto ⛔ `GW-TBD-11`
-- [ ] T-INF-03 · Registrar la URL exacta de Cloud Run de cada microservicio y usarla como valor de `CAMEIA_*_URL` en el despliegue. Es el audience, y debe coincidir carácter a carácter ⛔ `GW-TBD-12` (REQ-OIDC-02)
-- [ ] T-INF-04 · Verificación de extremo a extremo, una vez desplegado: una llamada a través del Gateway llega y es aceptada; una llamada directa al microservicio, saltándose el Gateway, es rechazada. Sin las dos mitades la verificación no demuestra nada ⛔ `GW-TBD-11`
+> **15/09/2026:** DevOps respondió el 11/09/2026 (spec §6.1, Jira CM-143). Hay decisiones, pero la
+> ejecución sigue pendiente, y la respuesta choca con los workflows mergeados el 14/09/2026 (spec §6.2).
+
+- [ ] T-INF-01 · Definir con arquitectura la identidad con la que corre el Gateway en Cloud Run: nombre de la service account y proyecto. Anotar la decisión en el spec, no en el código ⛔ `GW-TBD-24` — *decidido: una service account por servicio en `cameia-app`. Falta crearla, y el workflow de producción todavía usa la de Compute (spec §6.2, #2)*
+- [ ] T-INF-02 · Conceder `roles/run.invoker` de **cada** microservicio destino a esa identidad. Sin este paso el destino responde `403` aunque el token sea correcto ⛔ `GW-TBD-25` — *responsable: DevOps, binding por servicio. Pendiente de ejecutar*
+- [ ] T-INF-03 · Registrar la URL exacta de Cloud Run de cada microservicio y usarla como valor de `CAMEIA_*_URL` en el despliegue. Es el audience, y debe coincidir carácter a carácter ⛔ `GW-TBD-12` (REQ-OIDC-02) — *decidido: siempre la URL `*.run.app`, nunca dominio propio. Faltan las URLs, y los workflows todavía usan `http://cameia-perfil:8080` (spec §6.2, #3)*
+- [ ] T-INF-04 · Verificación de extremo a extremo, una vez desplegado: una llamada a través del Gateway llega y es aceptada; una llamada directa al microservicio, saltándose el Gateway, es rechazada. Sin las dos mitades la verificación no demuestra nada ⛔ `GW-TBD-25`
 
 ---
 

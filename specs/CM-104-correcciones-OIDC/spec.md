@@ -75,7 +75,7 @@ ninguna ruta nueva, ninguna variable de audience.
 | Prerequisito | Estado | Por qué importa |
 |---|---|---|
 | `specs/CM-104-correcciones/` implementado y mergeado en `develop` | Pendiente | Este spec firma la petición **después** de que el filtro de identidad la haya saneado. Reutiliza `withIdentity` y `withoutIdentity`, y el archivo del perfil de despliegue se apoya en el `application-local.yml` que aquel spec crea |
-| Infraestructura de GCP (`GW-TBD-10` … `GW-TBD-13`) | **No configurada** | Bloquea el despliegue y la verificación de extremo a extremo, **no** la implementación ni la suite: el código se escribe y se prueba con el paso de firma apagado y una fuente de tokens simulada |
+| Infraestructura de GCP (`GW-TBD-24`, `GW-TBD-25`, `GW-TBD-12` y `GW-TBD-13`) | **No configurada** | Bloquea el despliegue y la verificación de extremo a extremo, **no** la implementación ni la suite: el código se escribe y se prueba con el paso de firma apagado y una fuente de tokens simulada |
 
 > **Consecuencia práctica:** los Bloques 1 a 7 de `tasks.md` se pueden completar hoy. El Bloque 0
 > queda esperando a que exista el proyecto de GCP.
@@ -293,17 +293,52 @@ Este spec agrega **una sola** variable. Las de CM-104 §4 siguen vigentes sin ca
 
 Continúa la serie de `specs/CM-104-correcciones/` §5, que llegó hasta `GW-TBD-09`.
 
+> **Renumeración del 15/09/2026:** este spec usó originalmente `GW-TBD-10` y `GW-TBD-11`, que
+> `specs/CM-104-correcciones/` también asignó el 14/09/2026 a otros temas. Para eliminar la colisión,
+> los de este spec pasan a `GW-TBD-24` (service account) y `GW-TBD-25` (`run.invoker`). Los de
+> correcciones conservan su número porque `AGENTS.md` y `docs/COMO-FUNCIONA.md` ya los citan. El
+> registro completo está en `specs/NUMERACIONES.md`.
+
 | ID | Tema | Impacto | Quién decide |
 |---|---|---|---|
-| `GW-TBD-10` | Nombre y proyecto de la service account con la que corre el Gateway en Cloud Run | Ninguno sobre el código: las credenciales por defecto la resuelven solas | Arquitectura / infraestructura |
-| `GW-TBD-11` | Quién concede `roles/run.invoker` de cada microservicio a esa identidad, y cuándo | Bloquea el despliegue, no la implementación | Arquitectura / infraestructura |
+| `GW-TBD-24` | Nombre y proyecto de la service account con la que corre el Gateway en Cloud Run | Ninguno sobre el código: las credenciales por defecto la resuelven solas | Arquitectura / infraestructura |
+| `GW-TBD-25` | Quién concede `roles/run.invoker` de cada microservicio a esa identidad, y cuándo | Bloquea el despliegue, no la implementación | Arquitectura / infraestructura |
 | `GW-TBD-12` | URL exacta de Cloud Run de cada microservicio y su forma canónica, con o sin barra final | El audience debe coincidir carácter a carácter | Infraestructura, al desplegar cada servicio |
 | `GW-TBD-13` | Qué audience se usa para un microservicio todavía no desplegado (voz, auditoría) | Hoy ninguno: esas rutas fallan igual por no tener servicio detrás | Arquitectura, en Sprint 2/3 |
 | `GW-TBD-14` | Confirmar con Cuentas que el webhook de Wompi se autentica por la firma del cuerpo y no por `Authorization`, que este spec reemplaza | Si Cuentas dependiera del `Authorization` entrante, habría que revisar `REQ-OIDC-03` | Cuentas |
 
-`GW-TBD-10` a `GW-TBD-13` **no bloquean la implementación**: ninguno cambia el código que aquí se
+`GW-TBD-24`, `GW-TBD-25`, `GW-TBD-12` y `GW-TBD-13` **no bloquean la implementación**: ninguno cambia el código que aquí se
 pide, y las pruebas no los necesitan. Sí bloquean el despliegue. `GW-TBD-14` se cierra preguntando,
 no escribiendo código.
+
+### 6.1 Respuesta de DevOps (11/09/2026)
+
+Fuente: `specs/CM-104-correcciones-OIDC/RESPUESTA-INFRA-OIDC.md`, de Paula Andrea Muñoz Delgado (DevOps), en respuesta a
+`SOLICITUD-INFRA-OIDC.md`. Seguimiento en Jira **CM-143**. Anotada en este spec el 15/09/2026.
+
+| ID | Respuesta | Estado |
+|---|---|---|
+| `GW-TBD-24` | **Una service account por servicio**, no compartida, en el proyecto `cameia-app`. Se crea al aprovisionar Cloud Run. Sin archivo de clave del lado de Backend | Respondido. Creación pendiente |
+| `GW-TBD-25` | La concede DevOps (Owner de `cameia-app`), con un binding **por servicio**, no global, en cuanto exista la service account del Gateway y cada microservicio esté desplegado | Respondido. Ejecución pendiente |
+| `GW-TBD-12` | Todavía no hay URLs reales. El audience de cada microservicio **será siempre su URL `*.run.app`**: ningún microservicio tendrá dominio propio. Solo el Gateway se publicará en `api.cameia.app` mediante Cloud Run Domain Mapping, y eso no afecta al audience | Parcial: faltan las URLs exactas |
+| `GW-TBD-13` | `cameia-voz` y `cameia-auditoria` no se despliegan en esta ventana. Sus rutas quedan como marcador; no hace falta resolver su variable ahora | ✅ Cerrado |
+| `GW-TBD-14` | Sin respuesta: la pregunta es para Cuentas, no para DevOps | Abierto |
+
+Todo lo anterior seguía bloqueado, según esa respuesta, por la facturación de GCP (posible restricción
+de la organización `unicauca.edu.co` sobre cuentas de facturación).
+
+**Consecuencia para el diseño:** la decisión de `GW-TBD-12` confirma `REQ-OIDC-02` tal como está. El
+audience sale de `CAMEIA_*_URL`, y esas variables deberán valer la URL `*.run.app` de cada servicio.
+
+### 6.2 Discrepancias detectadas el 15/09/2026 — se preguntan, no se corrigen
+
+| # | Discrepancia | Evidencia | A quién |
+|---|---|---|---|
+| 1 | La respuesta dice que Cloud Run no está aprovisionado, pero **tres días después** se mergearon workflows que despliegan el Gateway a Cloud Run. ¿Se resolvió la facturación? ¿La respuesta sigue vigente? | Respuesta del 11/09/2026 · `ae10f08` (staging, #27) y `d2d454f` (producción, #28), ambos del 14/09/2026 | DevOps |
+| 2 | El despliegue usa la service account **por defecto de Compute Engine**, no una propia del Gateway, lo que contradice `GW-TBD-24` | `.github/workflows/desplegar-servicio.yml:89`, `--service-account="…-compute@developer.gserviceaccount.com"` | DevOps |
+| 3 | Los workflows fijan `CAMEIA_PERFIL_URL=http://cameia-perfil:8080` y `CAMEIA_CUENTAS_URL=http://cameia-cuentas:8080`: nombres de contenedor de Docker, no URLs `*.run.app`. En Cloud Run no resuelven, y como audience nunca coincidirían (`REQ-OIDC-02`) | `.github/workflows/despliegue-continuo.yml:95`, `.github/workflows/desplegar-servicio.yml:90` | DevOps (T-INF-03) |
+| 4 | Publicar el Gateway con **Domain Mapping** puede no permitir Cloud Armor, que se configura sobre un balanceador. El rate limit del registro depende de eso | `specs/CM-14-Registro-usuario/spec.md` C-4 | DevOps |
+| 5 | ✅ **Resuelta 15/09/2026.** Colisión de IDs: `GW-TBD-10` y `GW-TBD-11` significaban otra cosa en `specs/CM-104-correcciones/spec.md`. Los de este spec se renumeraron a `GW-TBD-24` y `GW-TBD-25` | `specs/NUMERACIONES.md` | Juan Vela |
 
 ---
 
