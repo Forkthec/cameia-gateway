@@ -51,7 +51,7 @@ decisiones del Gateway están cerradas.
 
 ### Avisos a enviar
 
-- [ ] T-00m · **DevOps:** el rate limit con Cloud Armor necesita un Application Load Balancer delante del Gateway (el Domain Mapping previsto para `api.cameia.app` puede no admitirlo), ingress restringido al balanceador y clave del límite por IP de conexión, no `XFF_IP` (spec C-4)
+- [ ] T-00m · **DevOps:** el rate limit con Cloud Armor necesita un Application Load Balancer delante del Gateway (el Domain Mapping previsto para `api.cameia.app` puede no admitirlo), ingress restringido al balanceador y clave del límite por IP de conexión, no `XFF_IP` (spec C-14)
 - [ ] T-00n · **Entrevista:** su health debe pasar de `GET /health` a `GET /api/v1/interviews/health`; hasta entonces responde `404` a través del Gateway (spec C-8)
 - [ ] T-00o · **Cuentas:** el registro llega sin `X-User-*` y debe quedar exento del contrato de entrada del Gateway, como el health; definir cómo `correo_verificado` pasa a `true`; valorar borrar cuentas sin verificar tras N días (spec C-6)
 - [ ] T-00p · **Frontend:** tras el `201`, iniciar sesión y llamar a `sendEmailVerification`; ofrecer "reenviar correo"; la recuperación usa `sendPasswordResetEmail`. En plan Spark solo hay 150 correos de recuperación al día (spec C-6)
@@ -61,19 +61,19 @@ decisiones del Gateway están cerradas.
 
 ## Bloque 1 — PRIORIDAD · Health v1 público solo en desarrollo
 
-- [ ] T-01 · Quitar `"/api/v1/users/health"` de `PUBLIC_PATHS` (cambio sin commit en la copia de trabajo, sin spec). Correr la suite: debe seguir en verde (spec C-9)
-- [ ] T-02 · Convertir `PUBLIC_PATHS` en `Set<PublicRoute>` con el `record` privado `PublicRoute(HttpMethod, String)` y `POST /webhooks/wompi`. **No tocar** la prueba de wompi: tiene que seguir en verde tal cual (REQ-REG-06, plan §2)
-- [ ] T-03 · Crear `DEV_PUBLIC_ROUTES` con las cinco rutas `GET /api/v1/<prefijo>/health` del plan §2. Solo versión 1 (REQ-REG-01, REQ-REG-03)
-- [ ] T-04 · Inyectar `Environment` en el constructor del filtro y calcular `devRoutesEnabled` con `matchesProfiles("local")`. La comprobación de ruta pública consulta la lista de desarrollo solo si ese valor es verdadero (REQ-REG-01, REQ-REG-02, plan §3.1)
-- [ ] T-05 · Guardia en el constructor: si `devRoutesEnabled` y `K_SERVICE` está definida, lanzar `IllegalStateException` con mensaje en español (REQ-REG-02, plan §3.3)
-- [ ] T-06 · Confirmar que `docker-compose.yml`, `.env.example` y `.vscode/launch.json` activan `local` (REQ-REG-02, plan §3.2)
-- [ ] T-07 · Cambiar `application.yml` a `${SPRING_PROFILES_ACTIVE:}` y verificar que el contexto arranca sin perfiles cuando la variable no existe. Si no arranca, eliminar la línea en vez de dejarla vacía (REQ-REG-02, plan §3.2)
-- [ ] T-08 · Pruebas 1 y 4 del plan en una clase con perfiles `test,local`: las cinco rutas de health llegan sin token y sin `X-User-*`; `/health/` y `/health/x` responden `401` (REQ-REG-01, REQ-REG-03, REQ-REG-04)
-- [ ] T-09 · Pruebas 2 y 3 del plan: sin `local` el health responde `401` y `MockWebServer` no recibe nada; `POST` al health responde `401` con `local` (REQ-REG-02, REQ-REG-03)
-- [ ] T-10 · Prueba 5 del plan: con `local` y `K_SERVICE` como propiedad, el contexto no arranca (REQ-REG-02)
-- [ ] T-11 · Actualizar `AGENTS.md` §4, §5, §6.2 y §9, y `docs/COMO-FUNCIONA.md`: método + ruta, lista de desarrollo, fin del perfil por defecto (plan §6)
+- [x] T-01 · Quitar `"/api/v1/users/health"` de `PUBLIC_PATHS` (cambio sin commit en la copia de trabajo, sin spec). Correr la suite: debe seguir en verde (spec C-9) — 16/09/2026: la entrada ya no estaba en `PUBLIC_PATHS` ni había cambios sin commit; nada que quitar
+- [x] T-02 · Convertir `PUBLIC_PATHS` en `Set<PublicRoute>` con el `record` privado `PublicRoute(HttpMethod, String)` y `POST /webhooks/wompi`. **No tocar** la prueba de wompi: tiene que seguir en verde tal cual (REQ-REG-06, plan §2) — 16/09/2026
+- [x] T-03 · Crear `DEV_PUBLIC_ROUTES` con las cinco rutas `GET /api/v1/<prefijo>/health` del plan §2. Solo versión 1 (REQ-REG-01, REQ-REG-03) — 16/09/2026
+- [x] T-04 · Inyectar `Environment` en el constructor del filtro y calcular `devRoutesEnabled` con `matchesProfiles("local")`. La comprobación de ruta pública consulta la lista de desarrollo solo si ese valor es verdadero (REQ-REG-01, REQ-REG-02, plan §3.1) — 16/09/2026
+- [x] T-05 · Guardia en el constructor: si `devRoutesEnabled` y `K_SERVICE` está definida, lanzar `IllegalStateException` con mensaje en español (REQ-REG-02, plan §3.3) — 16/09/2026
+- [x] T-06 · Confirmar que `docker-compose.yml`, `.env.example` y `.vscode/launch.json` activan `local` (REQ-REG-02, plan §3.2) — 16/09/2026: `docker-compose.yml` y `.env.example` declaran `local`. **`.vscode/launch.json` no existe** (solo `settings.json`)
+- [x] T-07 · Cambiar `application.yml` a `${SPRING_PROFILES_ACTIVE:}` y verificar que el contexto arranca sin perfiles cuando la variable no existe. Si no arranca, eliminar la línea en vez de dejarla vacía (REQ-REG-02, plan §3.2) — 16/09/2026: se deja `${SPRING_PROFILES_ACTIVE:}`. Comprobado en un contenedor sin la variable: `No active profile set, falling back to 1 default profile: "default"` y `GatewayStartupTest` 3/3 en verde
+- [x] T-08 · Pruebas 1 y 4 del plan en una clase con perfiles `test,local`: las cinco rutas de health llegan sin token y sin `X-User-*`; `/health/` y `/health/x` responden `401` (REQ-REG-01, REQ-REG-03, REQ-REG-04) — 16/09/2026: `DevHealthRoutesTest`
+- [x] T-09 · Pruebas 2 y 3 del plan: sin `local` el health responde `401` y `MockWebServer` no recibe nada; `POST` al health responde `401` con `local` (REQ-REG-02, REQ-REG-03) — 16/09/2026: `devHealth_withoutLocalProfile_returns401` y `DevHealthRoutesTest.devHealth_postMethod_returns401`
+- [x] T-10 · Prueba 5 del plan: con `local` y `K_SERVICE` como propiedad, el contexto no arranca (REQ-REG-02) — 16/09/2026: `GatewayStartupTest.devRoutes_onCloudRun_failsStartup`, con Firebase simulado para que la guardia sea la única causa posible
+- [x] T-11 · Actualizar `AGENTS.md` §4, §5, §6.2 y §9, y `docs/COMO-FUNCIONA.md`: método + ruta, lista de desarrollo, fin del perfil por defecto (plan §6) — 16/09/2026
 
-**Cierre de bloque:** `docker compose run --rm verify` en verde, con las pruebas nuevas contadas.
+**Cierre de bloque:** `docker compose run --rm verify` en verde, con las pruebas nuevas contadas. ✅ 16/09/2026 — Bloques 1 y 2 cerrados juntos: `Tests run: 47, Failures: 0, Errors: 0`, `BUILD SUCCESS`.
 
 ---
 
@@ -81,16 +81,16 @@ decisiones del Gateway están cerradas.
 
 > `GW-TBD-23` cerrado: método + ruta exactos, sin ruta YAML propia.
 
-- [ ] T-12 · Agregar `new PublicRoute(HttpMethod.POST, "/api/v1/users")` a la lista base (REQ-REG-05)
+- [x] T-12 · Agregar `new PublicRoute(HttpMethod.POST, "/api/v1/users")` a la lista base (REQ-REG-05) — 16/09/2026
 - [x] T-13 · ~~Declarar la ruta YAML `cameia-cuentas-registration`~~ — **omitida**: `GW-TBD-23` decidió no crear ruta propia; `Path=/api/v1/users/**` ya cubre `/api/v1/users` (plan §4)
-- [ ] T-14 · Revisar `withoutIdentity`. Si no elimina `Authorization`, agregar `headers.remove(HttpHeaders.AUTHORIZATION)` (REQ-REG-07, plan §4)
-- [ ] T-15 · Prueba 6: `POST /api/v1/users` sin token llega a Cuentas; `takeRequest()` demuestra que no llegan `X-User-Id` ni `Authorization` enviados por el cliente (REQ-REG-05, REQ-REG-07)
-- [ ] T-16 · Prueba 7 parametrizada: `GET`, `PUT`, `PATCH`, `DELETE /api/v1/users` sin token → `401`, y `getRequestCount()` sin cambios (REQ-REG-06)
-- [ ] T-17 · Prueba 8: `MockWebServer` responde `409` y `422` con cuerpo JSON; el cliente recibe el mismo estado y cuerpo, no el catálogo del Gateway (REQ-REG-09)
-- [ ] T-18 · Verificar en Spring Cloud Gateway 5.0.3 el nombre exacto de las propiedades de wiretap. Prueba 9: leer `application*.yml` del classpath y fallar si alguna las activa (REQ-REG-08, plan §4)
-- [ ] T-19 · Pasar la fila de registro en `AGENTS.md` §5 a activa
+- [x] T-14 · Revisar `withoutIdentity`. Si no elimina `Authorization`, agregar `headers.remove(HttpHeaders.AUTHORIZATION)` (REQ-REG-07, plan §4) — 16/09/2026: no lo eliminaba; se agregó
+- [x] T-15 · Prueba 6: `POST /api/v1/users` sin token llega a Cuentas; `takeRequest()` demuestra que no llegan `X-User-Id` ni `Authorization` enviados por el cliente (REQ-REG-05, REQ-REG-07) — 16/09/2026
+- [x] T-16 · Prueba 7 parametrizada: `GET`, `PUT`, `PATCH`, `DELETE /api/v1/users` sin token → `401`, y `getRequestCount()` sin cambios (REQ-REG-06) — 16/09/2026
+- [x] T-17 · Prueba 8: `MockWebServer` responde `409` y `422` con cuerpo JSON; el cliente recibe el mismo estado y cuerpo, no el catálogo del Gateway (REQ-REG-09) — 16/09/2026: `registration_downstreamError_isReturnedUnchanged`
+- [x] T-18 · Verificar en Spring Cloud Gateway 5.0.3 el nombre exacto de las propiedades de wiretap. Prueba 9: leer `application*.yml` del classpath y fallar si alguna las activa (REQ-REG-08, plan §4) — 16/09/2026: `spring.cloud.gateway.server.webflux.httpclient.wiretap` y `...httpserver.wiretap`, ambas `false` por defecto según `spring-configuration-metadata.json` del jar 5.0.3. Prueba `VersionedYamlTest.versionedYaml_doesNotEnableWiretap`
+- [x] T-19 · Pasar la fila de registro en `AGENTS.md` §5 a activa — 16/09/2026
 
-**Cierre de bloque:** `docker compose run --rm verify` en verde. `wompiWebhook_withoutToken...` sin cambios.
+**Cierre de bloque:** `docker compose run --rm verify` en verde. `wompiWebhook_withoutToken...` sin cambios. ✅ 16/09/2026 — misma ejecución; la prueba de wompi no se tocó.
 
 ---
 
@@ -102,9 +102,9 @@ decisiones del Gateway están cerradas.
 
 ## Bloque 4 — Cierre
 
-- [ ] T-21 · Revisar `git diff develop...HEAD`: ningún secreto, ninguna lista pública en YAML, ningún comando presentado como ejecutado sin haberlo hecho
+- [x] T-21 · Revisar `git diff develop...HEAD`: ningún secreto, ninguna lista pública en YAML, ningún comando presentado como ejecutado sin haberlo hecho — 16/09/2026: sin secretos (el único `password` es un valor falso de prueba), ninguna lista pública en YAML
 - [ ] T-22 · Recorrer el DoD del spec §7 con evidencia real (salida de comando o nombre de prueba)
-- [ ] T-23 · Rellenar la bitácora de IA del mismo día (`AGENTS.md` §10)
+- [x] T-23 · Rellenar la bitácora de IA del mismo día (`AGENTS.md` §10) — 16/09/2026: `Entregables/16092026_BitacoraIA_Codigo_E2.md`, pendiente de revisión humana
 - [ ] T-24 · Abrir el PR **solo con autorización expresa** (`AGENTS.md` §0, punto 1), con el título del spec §7 y el ID confirmado
 
 ---

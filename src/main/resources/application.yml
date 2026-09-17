@@ -1,8 +1,10 @@
 spring:
   application:
     name: ${SPRING_APPLICATION_NAME:cameia-gateway}
+  # Sin perfil por defecto (CM-14 REQ-REG-02, GW-TBD-19): 'local' abre rutas públicas de desarrollo
+  # y nunca debe activarse solo. Quien lo necesita lo declara (docker-compose.yml, .env).
   profiles:
-    active: ${SPRING_PROFILES_ACTIVE:local}
+    active: ${SPRING_PROFILES_ACTIVE:}
 
   # SimpleDiscoveryClientAutoConfiguration referencia ServerProperties que se movió en SB 4.1.1.
   # El gateway usa URLs directas (env vars), no service discovery ni load balancing.

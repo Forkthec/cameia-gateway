@@ -15,11 +15,14 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.http.HttpMethod;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -27,8 +30,10 @@ import org.springframework.test.web.reactive.server.EntityExchangeResult;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -475,6 +480,107 @@ class FirebaseAuthGlobalFilterTest {
 
         RecordedRequest req = mockDownstream.takeRequest();
         assertThat(req.getHeader("X-Request-Id")).isNotBlank();
+    }
+
+    // ── CM-14 prueba 2: sin perfil local el health es Caso A (REQ-REG-02) ────
+
+    /**
+     * CM-14 REQ-REG-02: esta clase corre sin el perfil {@code local}, así que un health de la lista
+     * de desarrollo exige token y la solicitud no llega al microservicio.
+     */
+    @Test
+    void devHealth_withoutLocalProfile_returns401() {
+        int requestsBefore = mockDownstream.getRequestCount();
+
+        webTestClient.get()
+                .uri("/api/v1/users/health")
+                .exchange()
+                .expectStatus().isUnauthorized()
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("AUTH_REQUIRED");
+
+        assertThat(mockDownstream.getRequestCount()).isEqualTo(requestsBefore);
+    }
+
+    // ── CM-14 prueba 6: el registro llega sin credenciales del cliente ───────
+
+    /**
+     * CM-14 REQ-REG-05, REQ-REG-07: {@code POST /api/v1/users} llega a cameia-cuentas sin token. Un
+     * ID Token que el navegador envíe por inercia y un {@code X-User-Id} inyectado no llegan; el
+     * cuerpo sí, intacto.
+     */
+    @Test
+    void registration_withoutToken_reachesAccountsWithoutClientCredentials() throws Exception {
+        String body = "{\"email\":\"ana@cameia.tech\",\"password\":\"no-se-registra\"}";
+        mockDownstream.enqueue(new MockResponse().setResponseCode(201).setBody("{}"));
+
+        webTestClient.post()
+                .uri("/api/v1/users")
+                .header("Authorization", "Bearer token-del-navegador")
+                .header("X-User-Id", "atacante")
+                .header("Content-Type", "application/json")
+                .bodyValue(body)
+                .exchange()
+                .expectStatus().isCreated();
+
+        RecordedRequest req = mockDownstream.takeRequest(5, TimeUnit.SECONDS);
+        assertThat(req).isNotNull();
+        assertThat(req.getPath()).isEqualTo("/api/v1/users");
+        assertThat(req.getHeader("Authorization")).isNull();
+        assertThat(req.getHeader("X-User-Id")).isNull();
+        assertThat(req.getBody().readUtf8()).isEqualTo(body);
+    }
+
+    // ── CM-14 prueba 7: solo POST es público en /api/v1/users (REQ-REG-06) ───
+
+    /**
+     * CM-14 REQ-REG-06: la entrada pública es {@code POST}. Cualquier otro método sobre la misma
+     * ruta es Caso A y no llega a cameia-cuentas.
+     *
+     * @param method método HTTP distinto de POST
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"GET", "PUT", "PATCH", "DELETE"})
+    void usersRoot_nonPostWithoutToken_returns401(String method) {
+        int requestsBefore = mockDownstream.getRequestCount();
+
+        webTestClient.method(HttpMethod.valueOf(method))
+                .uri("/api/v1/users")
+                .exchange()
+                .expectStatus().isUnauthorized()
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("AUTH_REQUIRED");
+
+        assertThat(mockDownstream.getRequestCount()).isEqualTo(requestsBefore);
+    }
+
+    // ── CM-14 prueba 8: los errores de Cuentas pasan intactos (REQ-REG-09) ───
+
+    /**
+     * CM-14 REQ-REG-09: un {@code 409} o {@code 422} de cameia-cuentas llega al cliente con el mismo
+     * estado y el mismo cuerpo, no con el catálogo de errores del Gateway.
+     *
+     * @param status estado que devuelve cameia-cuentas
+     */
+    @ParameterizedTest
+    @ValueSource(ints = {409, 422})
+    void registration_downstreamError_isReturnedUnchanged(int status) throws Exception {
+        String body = "{\"code\":\"CUENTAS_ERROR\",\"message\":\"Ya existe un usuario con ese correo\"}";
+        mockDownstream.enqueue(new MockResponse().setResponseCode(status)
+                .setHeader("Content-Type", "application/json").setBody(body));
+
+        EntityExchangeResult<byte[]> result = webTestClient.post()
+                .uri("/api/v1/users")
+                .header("Content-Type", "application/json")
+                .bodyValue("{}")
+                .exchange()
+                .expectBody().returnResult();
+
+        // se consume antes de afirmar: si la prueba falla, no deja la solicitud en la cola compartida
+        mockDownstream.takeRequest(5, TimeUnit.SECONDS);
+
+        assertThat(result.getStatus().value()).isEqualTo(status);
+        assertThat(new String(result.getResponseBody(), StandardCharsets.UTF_8)).isEqualTo(body);
     }
 
     // ── Utilidad ─────────────────────────────────────────────────────────────

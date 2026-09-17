@@ -1,4 +1,5 @@
-# Perfil local — es el perfil activo por defecto (application.yml). REQ-15.
+# Perfil local — solo se activa si SPRING_PROFILES_ACTIVE lo declara (CM-14 REQ-REG-02).
+# Abre los health v1 de cada microservicio sin token (CM-14 REQ-REG-01): nunca en despliegue.
 # Solo overrides de desarrollo. Nada que deba existir en despliegue.
 #
 # Este archivo está versionado: NUNCA poner aquí secretos, credenciales ni URLs reales.

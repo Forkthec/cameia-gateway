@@ -70,9 +70,9 @@ flowchart TD
     ACT -->|No| B{"¿Alguna ruta del YAML<br/>coincide con la URL?"}
     B -->|No| C["404 NOT_FOUND<br/>el filtro nunca corre"]
     B -->|Sí| RID["Resuelve X-Request-Id<br/>(el del cliente o uno nuevo)"]
-    RID --> D{"¿La URL está en<br/>PUBLIC_PATHS?<br/>(constante en Java)"}
+    RID --> D{"¿Método + URL están en<br/>PUBLIC_ROUTES?<br/>(constante en Java)"}
 
-    D -->|Sí, es pública| E["No valida token<br/>Borra X-User-* del cliente"]
+    D -->|Sí, es pública| E["No valida token<br/>Borra X-User-* y Authorization del cliente"]
     D -->|No, es privada| F{"¿Bearer con token<br/>no vacío?"}
 
     F -->|No| G["401 AUTH_REQUIRED<br/>no llega al microservicio"]
@@ -159,13 +159,13 @@ el microservicio es idéntico en ambos. Son dos capas independientes:
 | Tipo de ruta | `Authorization` | Cabeceras de identidad | Trazabilidad |
 |---|---|---|---|
 | Privada (`/api/v1/**`) | Se **borra** | Las del token: `X-User-Id` siempre; `X-User-Email`, `X-User-Roles` y `X-User-Plan` si el claim existe. Las del cliente se descartan | `X-Request-Id` |
-| Pública (`/webhooks/wompi`) | Se **reenvía tal cual** | Ninguna: las `X-User-*` del cliente se borran | `X-Request-Id` |
+| Pública (`POST /webhooks/wompi`, `POST /api/v1/users`) | Se **borra** | Ninguna: las `X-User-*` del cliente se borran | `X-Request-Id` |
 
 Lo que falta en las dos filas es lo mismo: **no hay token OIDC**.
 
-Que la ruta pública reenvíe el `Authorization` del cliente es una decisión escrita, no un descuido: Wompi
-autentica su webhook con una firma en el cuerpo. Se revisa en el spec de OIDC, porque esa cabecera pasará a
-llevar el token de Google (`specs/CM-104-correcciones/plan.md` §3.3).
+Hasta CM-14 la ruta pública reenviaba el `Authorization` del cliente. Con el registro abierto se borra: un ID
+Token que el navegador mande por inercia no debe llegar a cameia-cuentas (`AGENTS.md` §7, bloqueante 4). Wompi
+no lo necesita, porque autentica su webhook con una firma en el cuerpo.
 
 ### Lo que falta para cerrarlo
 
@@ -207,11 +207,15 @@ instrucción no se usa, porque Cloud Run aplica sus propias sondas al puerto.
 
 ### Perfiles de Spring
 
-El perfil `local` es el activo por defecto y se declara en tres sitios:
+El perfil `local` **ya no es el activo por defecto** (CM-14, `GW-TBD-19`): abre rutas públicas de
+desarrollo y no debe activarse solo. Se declara en dos sitios:
 
-- `application.yml` → `spring.profiles.active: ${SPRING_PROFILES_ACTIVE:local}`
 - `docker-compose.yml` servicio `app` → `SPRING_PROFILES_ACTIVE: local`
 - `.env.example` → `SPRING_PROFILES_ACTIVE=local`
+
+`application.yml` queda con `spring.profiles.active: ${SPRING_PROFILES_ACTIVE:}`. Comprobado: sin la
+variable, el log dice `No active profile set, falling back to 1 default profile: "default"` y el contexto
+arranca. Si `local` está activo y existe `K_SERVICE` (Cloud Run la inyecta), el Gateway no arranca.
 
 Y tiene archivo propio, `src/main/resources/application-local.yml`, con un único ajuste de desarrollo:
 
@@ -284,7 +288,7 @@ flowchart TB
         Y1["¿A DÓNDE va la petición?<br/>6 rutas con predicados de Path"]
     end
     subgraph J["FirebaseAuthGlobalFilter.java"]
-        J1["¿HACE FALTA sesión?<br/>constante PUBLIC_PATHS"]
+        J1["¿HACE FALTA sesión?<br/>constantes PUBLIC_ROUTES<br/>y DEV_PUBLIC_ROUTES"]
     end
     Y1 -.->|"no se comunican:<br/>hay que sincronizarlos a mano"| J1
 
@@ -320,11 +324,21 @@ Ninguna URL se escribe en Java. Si ninguna ruta coincide, la respuesta es `404 N
 ### 5.2 ¿Hace falta sesión? — lo decide una constante en Java
 
 **No hay ninguna marca en el YAML que diga si una ruta es pública o privada.** La decisión la toma un único
-filtro global que corre para *todas* las rutas del gateway, y que consulta una lista fija escrita en el código:
+filtro global que corre para *todas* las rutas del gateway, y que consulta listas fijas escritas en el código.
+Cada entrada es un método y una ruta (CM-14):
 
 ```java
-private static final Set<String> PUBLIC_PATHS = Set.of(
-        "/webhooks/wompi"
+private record PublicRoute(HttpMethod method, String path) { }
+
+private static final Set<PublicRoute> PUBLIC_ROUTES = Set.of(
+        new PublicRoute(HttpMethod.POST, "/webhooks/wompi"),
+        new PublicRoute(HttpMethod.POST, "/api/v1/users")
+);
+
+// Solo se consulta con el perfil local activo
+private static final Set<PublicRoute> DEV_PUBLIC_ROUTES = Set.of(
+        new PublicRoute(HttpMethod.GET, "/api/v1/users/health"),
+        // ... profiles, interviews, voice-service, audit
 );
 ```
 
@@ -333,8 +347,8 @@ al YAML y no toca el Java, esa ruta queda protegida por omisión. Nunca se abre 
 
 ```mermaid
 flowchart TD
-    A["Llega la petición"] --> B{"¿PUBLIC_PATHS contiene<br/>esta ruta, texto exacto?"}
-    B -->|Sí| C["Borra X-User-* del cliente<br/>y sigue sin validar"]
+    A["Llega la petición"] --> B{"¿PUBLIC_ROUTES contiene<br/>método + ruta exactos?<br/>(o DEV_PUBLIC_ROUTES con local)"}
+    B -->|Sí| C["Borra X-User-* y Authorization<br/>del cliente y sigue sin validar"]
     B -->|No| D{"¿Authorization: Bearer<br/>con token no vacío?"}
     D -->|No| E["401 AUTH_REQUIRED"]
     D -->|Sí| F["verifyIdToken con Firebase"]
@@ -356,29 +370,32 @@ del token, como no poder hablar con Firebase, no se disfraza de `401`.
 Esto es lo que conviene entender antes de añadir rutas:
 
 **1. Abrir una ruta al público exige recompilar.**
-Una ruta privada solo necesita el YAML. Una pública exige además editar `PUBLIC_PATHS`, recompilar y volver a
+Una ruta privada solo necesita el YAML. Una pública exige además editar `PUBLIC_ROUTES`, recompilar y volver a
 construir la imagen. `AGENTS.md` §5 ya lo documenta.
 
 **2. La comparación es de texto exacto, sin comodines.**
-`PUBLIC_PATHS` es un `Set<String>` y se consulta con `.contains(path)`. No admite patrones. Por eso:
+`PUBLIC_ROUTES` es un `Set<PublicRoute>` y se consulta con `.contains(new PublicRoute(método, ruta))`. No
+admite patrones. Por eso:
 
-| URL | ¿Pasa como pública? |
+| Petición | ¿Pasa como pública? |
 |---|---|
-| `/webhooks/wompi` | ✅ Sí |
-| `/webhooks/wompi/` | ❌ No, con barra final pide token |
-| `/webhooks/wompi/callback` | ❌ No |
+| `POST /webhooks/wompi` | ✅ Sí |
+| `POST /webhooks/wompi/` | ❌ No, con barra final pide token |
+| `POST /webhooks/wompi/callback` | ❌ No |
+| `GET /api/v1/users/health/` (con `local`) | ❌ No, con barra final pide token |
 
 No se puede expresar una familia pública tipo `/api/v1/public/**` sin cambiar la forma de comparar.
 
-**3. El filtro ignora el método HTTP.**
-`PUBLIC_PATHS` solo mira la ruta. Que `/webhooks/wompi` sea POST lo impone el predicado `Method=POST` del YAML,
-no el filtro. Un `GET /webhooks/wompi` no coincide con ninguna ruta y muere en un `404` antes de llegar al filtro.
+**3. El filtro compara también el método HTTP** (CM-14 REQ-REG-06).
+`POST /api/v1/users` es público para el registro, pero `GET`, `PUT`, `PATCH` y `DELETE /api/v1/users` siguen
+exigiendo token. En `/webhooks/wompi` el predicado `Method=POST` del YAML ya filtraba antes: un `GET` muere en
+`404` sin llegar al filtro.
 
 **4. Actuator no pasa por el filtro, así que no está en la lista.**
 Spring elige quién atiende una petición recorriendo sus `HandlerMapping` por orden. Actuator va primero
 (orden `-100`) y las rutas del gateway después (orden `1`), así que el filtro **nunca ve** `/actuator/**`.
 Comprobado con una prueba de sondeo: `GET /actuator/health` con un token basura responde `200` y Firebase no
-llega a llamarse. Por eso las entradas de Actuator se retiraron de `PUBLIC_PATHS`: no controlaban nada.
+llega a llamarse. Por eso las entradas de Actuator se retiraron de la lista pública: no controlaban nada.
 
 La consecuencia importante: **todo endpoint que Actuator exponga es público.** Hoy son `health` e `info`, pero
 la lista sale de `MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE`. Con `env` añadido a esa variable,
@@ -483,7 +500,7 @@ Con Docker, sin instalar Java ni Maven:
 
 ```bash
 docker network create cameia-net        # una sola vez
-docker compose run --rm verify          # compila y corre las 27 pruebas
+docker compose run --rm verify          # compila y corre las 47 pruebas
 docker compose up --build -d            # levanta solo el gateway ('verify' está tras el perfil tools)
 curl http://localhost:8080/actuator/health
 ```
