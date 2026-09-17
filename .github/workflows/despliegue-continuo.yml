@@ -9,9 +9,22 @@ name: CD # despliegue a Cloud Run — staging desde develop, producción desde m
 # explícito ("producción debe desplegar exactamente los mismos digest, nunca reconstruir
 # el código entre ambientes") — así que el job de abajo busca el digest inmutable de la
 # imagen que YA se construyó y probó en staging, y despliega exactamente esa.
+#
+# Staging se dispara con workflow_run del workflow "CI" de este mismo repo, no con push
+# directo a develop: así el despliegue nunca corre sobre un commit cuyas pruebas
+# fallaron (disparado directo por push, el job de pruebas y el de despliegue correrían
+# en paralelo sobre el mismo evento, sin que uno esperara al otro). github.sha no sirve
+# dentro de un workflow disparado por workflow_run — apunta a la punta de la rama en el
+# momento del evento, no al commit que realmente terminó de pasar las pruebas — por eso
+# el job de staging pasa github.event.workflow_run.head_sha como input `sha` al workflow
+# reutilizable, en vez de dejar que este lea GITHUB_SHA por su cuenta.
 on:
   push:
-    branches: [develop, main]
+    branches: [main]
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [develop]
 
 concurrency:
   group: cd-gateway-${{ github.ref }}
@@ -24,19 +37,20 @@ permissions:
 jobs:
   staging:
     name: Staging (develop)
-    if: github.ref == 'refs/heads/develop'
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
     uses: ./.github/workflows/desplegar-servicio.yml
     with:
       ambiente: staging
       servicio: cameia-gateway
       min_instances: 0
+      sha: ${{ github.event.workflow_run.head_sha }}
 
   # Nombre de servicio distinto al de staging: sin esto, cada push a develop/main se
   # pisaría el despliegue del otro. "-prod" es provisional hasta que exista un
   # ambiente de producción real (proyecto/VPC separados de cameia-staging).
   produccion:
     name: Producción (main)
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production
     env:
