@@ -68,7 +68,7 @@ jobs:
           service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
 
       - name: Configurar gcloud
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@v3
 
       # Digest inmutable (sha256:...) de la imagen que el job de staging ya publicó
       # con ese mismo SHA de commit como tag — no se descarga ni se reconstruye nada,
