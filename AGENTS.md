@@ -236,7 +236,7 @@ Los microservicios reciben solo lo necesario para su autorización de negocio, *
 
 §6 describe el objetivo aprobado. `CM-104-correcciones` cerró el saneamiento de `X-User-*`, el contrato completo de §6.4, CORS, el `401` ante un Bearer vacío o malformado y la traducción de fallos del downstream a `502`/`503`/`504`. `CM-104-correcciones-OIDC` cerró la última brecha de código: la firma OIDC saliente (16/09/2026, rama `CM-104-correcciones-OIDC`, PR pendiente).
 
-**No está verificada en despliegue.** Falta el Bloque 0 de esa spec: service account propia del Gateway, `roles/run.invoker` en cada destino, URLs `*.run.app` en `CAMEIA_*_URL`, `SPRING_PROFILES_ACTIVE=prod` en los workflows y la prueba de extremo a extremo. Hasta entonces no se afirma que funcione en Cloud Run.
+**No está verificada en despliegue.** Desde `develop` (#37, #39) staging ya usa la service account dedicada `cameia-gateway-run` y URLs `*.run.app`. Falta del Bloque 0 de esa spec: confirmar `roles/run.invoker` en cada destino, URLs reales en producción, `SPRING_PROFILES_ACTIVE=prod` en los workflows (T-INF-05, decisión de DevOps) y la prueba de extremo a extremo. Hasta entonces no se afirma que funcione en Cloud Run.
 
 ---
 

@@ -279,8 +279,8 @@ app
   gateway no arranca: es un fallo intencional, no un bug.
 - En Cloud Run no se monta ningún JSON. Los workflows de `.github/workflows/` despliegan con
   `--service-account` y sin `GOOGLE_APPLICATION_CREDENTIALS`, así que el Admin SDK toma las credenciales de la
-  cuenta de servicio del servicio. Esa cuenta es hoy la de Compute Engine por defecto
-  (`…-compute@developer.gserviceaccount.com`); sus permisos no se revisaron en este escaneo.
+  cuenta de servicio del servicio. Desde #39 es una cuenta dedicada, `cameia-gateway-run`, y no la de Compute
+  Engine por defecto. Esa misma identidad es la que firma los tokens OIDC.
 
 ---
 
@@ -497,7 +497,7 @@ Lo que sigue abierto hoy:
 | 3 | Estados fuera del catálogo salen con cuerpo `INTERNAL_ERROR` | El cuerpo contradice al estado (`405` → `INTERNAL_ERROR`) | `GW-TBD-10` |
 | 4 | Los `404` se registran en `ERROR` con traza | Ruido en el log ante escáneres de URLs | sin ticket |
 | 5 | CORS no expone `X-Request-Id` | El frontend no puede mostrar el id al reportar un error | sin ticket |
-| 6 | El despliegue usa la cuenta de servicio por defecto de Compute Engine | Suele tener permisos amplios sobre el proyecto; no se revisaron | a revisar con el equipo |
+| 6 | El job de producción sigue con URLs de contenedor (`http://cameia-perfil:8080`) | En producción las rutas a Perfil y Cuentas no resuelven, y el audience no coincidiría | T-INF-03 |
 
 ---
 
@@ -548,10 +548,9 @@ Lo que hay hoy funciona para el objetivo de CM-113 y cumple el contrato de ident
 el frontend llama al gateway con un token de Firebase, el microservicio recibe una identidad que el cliente no
 puede falsificar, y cada error se puede rastrear por su `X-Request-Id`. Sobre eso:
 
-- 🔴 **Bloqueante para despliegue:** la firma OIDC está en el código, pero no protege nada hasta que los workflows
-  activen `prod`, exista la service account del gateway y cada microservicio le conceda `run.invoker`.
-- 🟠 **Antes de desplegar:** fijar en el YAML qué expone Actuator en vez de leerlo del entorno (`GW-TBD-11`), y
-  revisar la cuenta de servicio con la que corre el gateway.
+- 🔴 **Bloqueante para despliegue:** la firma OIDC está en el código, pero queda apagada hasta que los workflows
+  activen `prod` (T-INF-05, decisión de DevOps). La cuenta dedicada ya existe en los workflows (#39).
+- 🟠 **Antes de desplegar:** fijar en el YAML qué expone Actuator en vez de leerlo del entorno (`GW-TBD-11`).
 - 🟡 **Cuando haya un rato:** `GW-TBD-10`, exponer `X-Request-Id` en CORS y bajar de nivel el log de los `404`.
 - ⚪ **Cuando toque, no ahora:** rate limit, circuit breaker. Están fuera de alcance por escrito y necesitan Redis
   o Cloud Armor para funcionar de verdad con varias instancias.

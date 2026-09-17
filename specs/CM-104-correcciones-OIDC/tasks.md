@@ -40,9 +40,10 @@ docker compose run --rm verify
 > **15/09/2026:** DevOps respondió el 11/09/2026 (spec §6.1, Jira CM-143). Hay decisiones, pero la
 > ejecución sigue pendiente, y la respuesta choca con los workflows mergeados el 14/09/2026 (spec §6.2).
 
-- [ ] T-INF-01 · Definir con arquitectura la identidad con la que corre el Gateway en Cloud Run: nombre de la service account y proyecto. Anotar la decisión en el spec, no en el código ⛔ `GW-TBD-24` — *decidido: una service account por servicio en `cameia-app`. Falta crearla, y el workflow de producción todavía usa la de Compute (spec §6.2, #2)*
-- [ ] T-INF-02 · Conceder `roles/run.invoker` de **cada** microservicio destino a esa identidad. Sin este paso el destino responde `403` aunque el token sea correcto ⛔ `GW-TBD-25` — *responsable: DevOps, binding por servicio. Pendiente de ejecutar*
-- [ ] T-INF-03 · Registrar la URL exacta de Cloud Run de cada microservicio y usarla como valor de `CAMEIA_*_URL` en el despliegue. Es el audience, y debe coincidir carácter a carácter ⛔ `GW-TBD-12` (REQ-OIDC-02) — *decidido: siempre la URL `*.run.app`, nunca dominio propio. Faltan las URLs, y los workflows todavía usan `http://cameia-perfil:8080` (spec §6.2, #3)*
+- [ ] T-INF-01 · Definir con arquitectura la identidad con la que corre el Gateway en Cloud Run: nombre de la service account y proyecto. Anotar la decisión en el spec, no en el código ⛔ `GW-TBD-24` — *decidido: una service account por servicio en `cameia-app`. Falta crearla, y el workflow de producción todavía usa la de Compute (spec §6.2, #2)* · *17/09/2026: los workflows ya usan `cameia-gateway-run` (#39). Que la cuenta exista en GCP no se verificó desde el Gateway*
+- [ ] T-INF-02 · Conceder `roles/run.invoker` de **cada** microservicio destino a esa identidad. Sin este paso el destino responde `403` aunque el token sea correcto ⛔ `GW-TBD-25` — *responsable: DevOps, binding por servicio. Pendiente de ejecutar* · *17/09/2026: el comentario del workflow en `desplegar-servicio.yml` (#39), no verificado desde el Gateway, dice que `cameia-gateway-run` ya tiene invocación sobre los tres destinos de staging. Pedir a DevOps confirmación escrita antes de marcar; producción pendiente*
+- [ ] T-INF-03 · Registrar la URL exacta de Cloud Run de cada microservicio y usarla como valor de `CAMEIA_*_URL` en el despliegue. Es el audience, y debe coincidir carácter a carácter ⛔ `GW-TBD-12` (REQ-OIDC-02) — *decidido: siempre la URL `*.run.app`, nunca dominio propio. Faltan las URLs, y los workflows todavía usan `http://cameia-perfil:8080` (spec §6.2, #3)* · *17/09/2026: staging con URLs `*.run.app` sin barra final (#37). Producción sigue con nombres de contenedor*
+- [ ] T-INF-05 · **Decidir con DevOps** cuándo añadir `SPRING_PROFILES_ACTIVE=prod` a `--set-env-vars` de los workflows. Sin eso la firma queda apagada en Cloud Run. Acordar: (1) confirmación escrita de `run.invoker` en cada destino, (2) si los microservicios exigen autenticación (sin `--allow-unauthenticated`), (3) quién edita los workflows, (4) staging primero y la prueba de T-INF-04 antes de producción. **No se edita el workflow sin esa decisión** ⛔ spec §6.2 #6 (REQ-OIDC-07) — *añadida 17/09/2026, detectada al implementar*
 - [ ] T-INF-04 · Verificación de extremo a extremo, una vez desplegado: una llamada a través del Gateway llega y es aceptada; una llamada directa al microservicio, saltándose el Gateway, es rechazada. Sin las dos mitades la verificación no demuestra nada ⛔ `GW-TBD-25`
 
 ---
@@ -137,7 +138,7 @@ docker compose run --rm verify
 | `REQ-OIDC-04` | T-14, T-19 |
 | `REQ-OIDC-05` | T-07, T-09 |
 | `REQ-OIDC-06` | T-07 |
-| `REQ-OIDC-07` | T-01, T-02, T-03, T-04, T-05, T-20, T-21 |
+| `REQ-OIDC-07` | T-INF-05, T-01, T-02, T-03, T-04, T-05, T-20, T-21 |
 | `REQ-OIDC-08` | T-20 |
 | `REQ-OIDC-09` | T-14, T-15, T-19 |
 | `REQ-NF-OIDC-01` | T-10 |
