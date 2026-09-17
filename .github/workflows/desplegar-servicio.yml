@@ -20,6 +20,14 @@ on:
         required: false
         type: number
         default: 0
+      sha:
+        description: >-
+          SHA del commit a construir y desplegar. Obligatorio cuando quien invoca este
+          workflow se disparó por workflow_run: en ese caso GITHUB_SHA de este workflow
+          reutilizable apunta a la punta de la rama en el momento del evento, no al
+          commit que realmente disparó el evento.
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -40,6 +48,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha }}
 
       # Cuenta de servicio compartida entre gateway/perfil/cuentas, con permisos
       # mínimos y binding WIF condicionado a este repo (CM-156).
@@ -56,11 +66,13 @@ jobs:
       - name: Autenticar Docker contra Artifact Registry
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
-      # Tag corto (7 caracteres), convención de la guía DevOps del sprint.
+      # Tag corto (7 caracteres) calculado a partir del commit recibido como input, no
+      # de GITHUB_SHA -- este workflow puede invocarse desde un evento donde GITHUB_SHA
+      # no corresponde al commit que se quiere construir.
       - name: Calcular tag de imagen
         id: imagen
         run: |
-          SHA_CORTO="${GITHUB_SHA::7}"
+          SHA_CORTO=$(echo "${{ inputs.sha }}" | cut -c1-7)
           IMAGEN="${{ env.REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ env.AR_REPO }}/${{ env.IMAGEN_NOMBRE }}:${SHA_CORTO}"
           echo "imagen=${IMAGEN}" >> "$GITHUB_OUTPUT"
 
@@ -70,13 +82,28 @@ jobs:
       - name: Publicar imagen en Artifact Registry
         run: docker push "${{ steps.imagen.outputs.imagen }}"
 
-      # CAMEIA_PERFIL_URL/CAMEIA_CUENTAS_URL sin valor real: Perfil y Cuentas no
-      # tienen despliegue todavía (mismo marcador temporal en los dos ambientes).
+      # CAMEIA_PERFIL_URL, CAMEIA_CUENTAS_URL y CAMEIA_ENTREVISTA_URL apuntan a las URLs
+      # reales de Cloud Run de esos tres servicios, verificadas contra los servicios
+      # desplegados -- un hostname de docker-compose no es alcanzable fuera de una red
+      # local.
       # FIREBASE_PROJECT_ID es obligatorio: FirebaseConfig.java falla el arranque sin
       # él (fail-fast, REQ-06) — mismo proyecto que VITE_FIREBASE_PROJECT_ID en
-      # cameia-web. Sin --allow-unauthenticated a propósito: el SA de despliegue no
-      # tiene (ni necesita) permiso para tocar la política IAM del servicio — el
-      # acceso público se otorga una sola vez, fuera de este pipeline (ver PR).
+      # cameia-web.
+      #
+      # --service-account usa una identidad de ejecución propia y exclusiva de este
+      # servicio (no la identidad por defecto que comparten otros servicios del
+      # proyecto): es esa identidad, y solo ella, la que tiene permiso de invocación
+      # sobre los tres destinos anteriores. Reutilizar una identidad compartida aquí
+      # anularía esa separación, porque cualquier otra cosa que corra con la misma
+      # identidad heredaría el mismo acceso sin necesitarlo.
+      # Nota: tener el permiso de invocación no basta por sí solo para que la llamada
+      # funcione en la práctica -- este servicio todavía no firma ninguna credencial de
+      # identidad hacia sus llamadas salientes, así que un destino con ingreso interno
+      # seguiría rechazando la petición hasta que ese código exista.
+      #
+      # Sin --allow-unauthenticated a propósito: el SA de despliegue no tiene (ni
+      # necesita) permiso para tocar la política IAM del servicio — el acceso público
+      # se otorga una sola vez, fuera de este pipeline.
       - name: Desplegar a Cloud Run
         run: |
           gcloud run deploy "${{ inputs.servicio }}" \
@@ -86,8 +113,8 @@ jobs:
             --platform=managed \
             --min-instances=${{ inputs.min_instances }} \
             --max-instances=2 \
-            --service-account="25798898664-compute@developer.gserviceaccount.com" \
-            --set-env-vars="CAMEIA_PERFIL_URL=http://cameia-perfil:8080,CAMEIA_CUENTAS_URL=http://cameia-cuentas:8080,FIREBASE_PROJECT_ID=${{ vars.GCP_PROJECT_ID }}"
+            --service-account="cameia-gateway-run@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com" \
+            --set-env-vars="CAMEIA_PERFIL_URL=https://cameia-perfil-og25p6yagq-ue.a.run.app,CAMEIA_CUENTAS_URL=https://cameia-cuentas-og25p6yagq-ue.a.run.app,CAMEIA_ENTREVISTA_URL=https://cameia-entrevista-og25p6yagq-ue.a.run.app,FIREBASE_PROJECT_ID=${{ vars.GCP_PROJECT_ID }}"
 
       - name: URL del servicio desplegado
         run: gcloud run services describe "${{ inputs.servicio }}" --project="${{ vars.GCP_PROJECT_ID }}" --region="${{ env.REGION }}" --format="value(status.url)"
