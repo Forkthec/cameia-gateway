@@ -38,7 +38,7 @@ Ejemplo de formato, no una tarea o PR existente:
 ```text
 Rama: CM-123-documentar-configuracion
 PR: CM-123 | docs(web): documentar configuracion
-Commit: docs(web): documentar configuracion
+Commit: docs(web): documentar configuracion 
 ```
 
 El cuerpo de una promoción identifica tareas incluidas, versión/artefacto, validación, riesgos y
