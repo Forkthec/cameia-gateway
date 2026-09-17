@@ -3,7 +3,7 @@
 - **HU asociada:** CM-104 (revisión) — brecha bloqueante detectada al escanear la base técnica
 - **Sprint:** 1
 - **Fecha:** 11/09/2026
-- **Estado:** propuesta pendiente de aprobación
+- **Estado:** propuesta aprobada para implementacion pero pendiente de despliegue
 - **Flujo SDD:** Fase 1 — Requisitos EARS
 - **Rama:** `CM-104-correcciones-OIDC` → `develop`
 - **Fuentes:**
@@ -74,7 +74,7 @@ ninguna ruta nueva, ninguna variable de audience.
 
 | Prerequisito | Estado | Por qué importa |
 |---|---|---|
-| `specs/CM-104-correcciones/` implementado y mergeado en `develop` | Pendiente | Este spec firma la petición **después** de que el filtro de identidad la haya saneado. Reutiliza `withIdentity` y `withoutIdentity`, y el archivo del perfil de despliegue se apoya en el `application-local.yml` que aquel spec crea |
+| `specs/CM-104-correcciones/` implementado y mergeado en `develop` | Completado | Este spec firma la petición **después** de que el filtro de identidad la haya saneado. Reutiliza `withIdentity` y `withoutIdentity`, y el archivo del perfil de despliegue se apoya en el `application-local.yml` que aquel spec crea |
 | Infraestructura de GCP (`GW-TBD-24`, `GW-TBD-25`, `GW-TBD-12` y `GW-TBD-13`) | **No configurada** | Bloquea el despliegue y la verificación de extremo a extremo, **no** la implementación ni la suite: el código se escribe y se prueba con el paso de firma apagado y una fuente de tokens simulada |
 
 > **Consecuencia práctica:** los Bloques 1 a 7 de `tasks.md` se pueden completar hoy. El Bloque 0

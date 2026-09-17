@@ -100,6 +100,9 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
     /** Perfil de desarrollo: el único que abre {@code DEV_PUBLIC_ROUTES} (CM-14 REQ-REG-01). */
     static final String DEV_PROFILE = "local";
 
+    /** Perfil de despliegue: nunca puede convivir con {@code DEV_PROFILE} (CM-14 plan §3.3). */
+    static final String DEPLOY_PROFILE = "prod";
+
     /**
      * Variable que Cloud Run inyecta en todo contenedor de servicio. Si existe, el Gateway está
      * desplegado y la lista de desarrollo no puede estar activa (CM-14 REQ-REG-02).
@@ -154,17 +157,27 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
     /**
      * @param firebaseAuth cliente del Admin SDK de Firebase con el que se verifican los ID Tokens
      * @param environment  entorno de Spring, del que se leen los perfiles activos y {@code K_SERVICE}
-     * @throws IllegalStateException si el perfil de desarrollo está activo dentro de Cloud Run
+     * @throws IllegalStateException si el perfil de desarrollo está activo dentro de Cloud Run o
+     *                               junto al perfil de despliegue
      */
     public FirebaseAuthGlobalFilter(FirebaseAuth firebaseAuth, Environment environment) {
         this.firebaseAuth = firebaseAuth;
         this.devRoutesEnabled = environment.matchesProfiles(DEV_PROFILE);
-        if (devRoutesEnabled && environment.getProperty(CLOUD_RUN_SERVICE_VARIABLE) != null) {
+        if (devRoutesEnabled && isDeployment(environment)) {
             // CM-14 REQ-REG-02: se falla el arranque en vez de abrir los health en despliegue
             throw new IllegalStateException("El perfil '" + DEV_PROFILE + "' abre rutas públicas de "
                     + "desarrollo y no puede estar activo en Cloud Run (" + CLOUD_RUN_SERVICE_VARIABLE
-                    + " definida)");
+                    + " definida) ni junto al perfil '" + DEPLOY_PROFILE + "'");
         }
+    }
+
+    /**
+     * @param environment entorno de Spring
+     * @return {@code true} si existe {@code K_SERVICE} o está activo el perfil {@code prod}
+     */
+    private static boolean isDeployment(Environment environment) {
+        return environment.getProperty(CLOUD_RUN_SERVICE_VARIABLE) != null
+                || environment.matchesProfiles(DEPLOY_PROFILE);
     }
 
     /**

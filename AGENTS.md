@@ -98,7 +98,7 @@ El modelo completo de seguridad, que es la razón de existir de este componente,
 
 ```text
 tech.cameia.gateway
-├── config          FirebaseConfig (bean de arranque)
+├── config          FirebaseConfig, OidcConfig (beans de arranque) y OidcRequiredInProd (guardia)
 ├── filter          GlobalFilter — auth de entrada, identidad y firma OIDC de salida
 └── exception       GlobalErrorHandler — formato JSON de errores HTTP
 ```
@@ -126,10 +126,15 @@ exception      independiente
 | `FirebaseConfig` | `config` | Inicializa `FirebaseApp` en `@PostConstruct`; falla en arranque si las credenciales son inválidas (fail-fast) |
 | `FirebaseAuthGlobalFilter` | `filter` | Resuelve `X-Request-Id` y lo devuelve en la respuesta. Caso A: valida el Bearer token (`401` si falta, está vacío o Firebase lo rechaza), borra los `X-User-*` del cliente, emite `X-User-Id`, `X-User-Email`, `X-User-Roles` y `X-User-Plan` con `set` y elimina `Authorization`. Caso B, por método y ruta exactos (`PUBLIC_ROUTES`, y `DEV_PUBLIC_ROUTES` solo con el perfil `local`): borra los `X-User-*` y el `Authorization` del cliente. Falla el arranque si `local` está activo con `K_SERVICE` definida |
 | `GlobalErrorHandler` | `exception` | Formatea el error como `{"code":"...","message":"..."}` desde un catálogo cerrado (`AUTH_REQUIRED`, `NOT_FOUND`, `BAD_GATEWAY`, `SERVICE_UNAVAILABLE`, `GATEWAY_TIMEOUT`, `INTERNAL_ERROR`). Nunca copia el mensaje de la excepción: la registra en el log con su `X-Request-Id` |
+| `OidcConfig` | `config` | Con `gateway.oidc.signing-enabled=true` crea `GoogleIdTokenSource` y `OidcSigningGlobalFilter`; con `false` no crea ningún bean. La fuente real se apaga en pruebas con `gateway.oidc.google-credentials.enabled=false` |
+| `OidcRequiredInProd` | `config` | Con el perfil `prod`, falla el arranque si la firma OIDC está apagada |
+| `OidcTokenSource` | `filter` | Interfaz de una operación, `tokenFor(audience)`. Permite probar la firma con una fuente falsa |
+| `GoogleIdTokenSource` | `filter` | Pide el token a Google con `GoogleCredentials.getApplicationDefault()`. Cachea el objeto `IdTokenCredentials` por audience, nunca la cadena del token. Falla el arranque si las credenciales no son una service account |
+| `OidcSigningGlobalFilter` | `filter` | Orden `LOWEST_PRECEDENCE - 2`, antes del reenvío. Audience = `esquema://host[:puerto]` de la ruta, sin path, sin barra final y sin el puerto por defecto que `Route` agrega. Fija `Authorization` con `set`. Si no hay token responde `503` sin reenviar |
 
-> `GatewayProperties` se eliminó en CM-104-correcciones (REQ-14): nada la leía. La configuración tipada vuelve, si hace falta, con el spec de OIDC.
+> `GatewayProperties` se eliminó en CM-104-correcciones (REQ-14): nada la leía. La firma OIDC no la reintrodujo: le bastan `@ConditionalOnProperty` y `@Value`.
 
-**No se crea ninguna clase que no esté en esta tabla o en el spec aprobado de la HU.** El componente de firma OIDC de §6.3 todavía no existe: entra con su propia spec, no improvisado.
+**No se crea ninguna clase que no esté en esta tabla o en el spec aprobado de la HU.** El componente de firma OIDC de §6.3 existe desde `CM-104-correcciones-OIDC`.
 
 ---
 
@@ -229,11 +234,9 @@ Los microservicios reciben solo lo necesario para su autorización de negocio, *
 
 ### 6.5 Estado actual frente a este modelo
 
-§6 describe el objetivo aprobado. `CM-104-correcciones` cerró el saneamiento de `X-User-*`, el contrato completo de §6.4, CORS, el `401` ante un Bearer vacío o malformado y la traducción de fallos del downstream a `502`/`503`/`504`. Queda **una brecha**. No afirmarla como implementada, y no cerrarla sin su spec y sus pruebas:
+§6 describe el objetivo aprobado. `CM-104-correcciones` cerró el saneamiento de `X-User-*`, el contrato completo de §6.4, CORS, el `401` ante un Bearer vacío o malformado y la traducción de fallos del downstream a `502`/`503`/`504`. `CM-104-correcciones-OIDC` cerró la última brecha de código: la firma OIDC saliente (16/09/2026, rama `CM-104-correcciones-OIDC`, PR pendiente).
 
-| Brecha | Dónde |
-|---|---|
-| El paso OIDC saliente no existe: ninguna petición hacia un microservicio lleva token de Google | falta el componente de §6.3 (`specs/CM-104-correcciones-OIDC/`) |
+**No está verificada en despliegue.** Falta el Bloque 0 de esa spec: service account propia del Gateway, `roles/run.invoker` en cada destino, URLs `*.run.app` en `CAMEIA_*_URL`, `SPRING_PROFILES_ACTIVE=prod` en los workflows y la prueba de extremo a extremo. Hasta entonces no se afirma que funcione en Cloud Run.
 
 ---
 
@@ -280,7 +283,7 @@ Cómo ejecutar sin instalar Java ni Maven:
 docker compose run --rm verify
 ```
 
-Resultado esperado: `BUILD SUCCESS`. Hoy son 47 pruebas; el número sube a medida que se cubran las brechas de §6.5, y ninguna existente debe ponerse roja al hacerlo.
+Resultado esperado: `BUILD SUCCESS`. Hoy son 62 pruebas; el número sube a medida que se cubran las brechas de §6.5, y ninguna existente debe ponerse roja al hacerlo.
 
 ---
 
@@ -308,7 +311,7 @@ docker compose up --build -d              # arranca el gateway
 | `SPRING_PROFILES_ACTIVE` | **Sin default** (CM-14): `application.yml` no activa ningún perfil. `docker-compose.yml` y `.env` declaran `local`; quien arranque desde el IDE debe declararlo también |
 | `GATEWAY_CORS_ALLOWED_ORIGIN` | `http://localhost:5173` |
 | `GATEWAY_TIMEOUT_MS` | `30000` |
-| `GATEWAY_OIDC_ENABLED` | `false` en perfil `local`; en despliegue es `true` y no se puede apagar por entorno (§6.3) |
+| `GATEWAY_OIDC_ENABLED` | `false`. Solo alimenta `gateway.oidc.signing-enabled` en `application.yml`; con el perfil `prod` no tiene efecto, porque `application-prod.yml` fija `true` literal (§6.3) |
 | `CAMEIA_PERFIL_URL` | fijo en compose: `http://cameia-perfil-app:8082` |
 | `CAMEIA_CUENTAS_URL` | `http://cameia-cuentas-app:8081` |
 | `CAMEIA_ENTREVISTA_URL` | `http://cameia-entrevista-app:8083` |
@@ -338,16 +341,11 @@ El `[IA-ASISTIDO]` va **siempre al final**, nunca al inicio.
 
 ---
 
-## 12. Checklist antes de abrir PR
+## 12. Titulo y plantilla de commit
+```text
+CM-NNN | docs(scope): resultado [IA-ASISTIDO]
 
-- [ ] `docker compose run --rm verify` en verde (pegar salida en el PR)
-- [ ] Ningún secreto real en el diff
-- [ ] El ID Token de Firebase no sale hacia el downstream
-- [ ] Toda ruta nueva declara en su spec si es Caso A o Caso B (§6)
-- [ ] Las rutas salientes llevan token OIDC con el audience de la URL destino, o se explica por qué no aplica
-- [ ] Ningún `X-User-*` del cliente sobrevive hasta el downstream
-- [ ] `X-User-Plan` no se propaga vacío
-- [ ] Ninguna importación de `jakarta.persistence` ni JPA
-- [ ] `.env.example` actualizado si cambiaron variables
-- [ ] Bitácora del §10 con la fila correspondiente
-- [ ] Revisión pedida a alguien distinto de la autora
+Descripcion de un parrafo
+
+Comentario de modeol usado
+```

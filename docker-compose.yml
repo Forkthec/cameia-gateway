@@ -41,6 +41,8 @@ services:
       CAMEIA_ENTREVISTA_URL: ${CAMEIA_ENTREVISTA_URL:-http://cameia-entrevista:8080}
       GATEWAY_CORS_ALLOWED_ORIGIN: ${GATEWAY_CORS_ALLOWED_ORIGIN:-http://localhost:5173}
       GATEWAY_TIMEOUT_MS: ${GATEWAY_TIMEOUT_MS:-30000}
+      # Firma OIDC saliente: apagada en local, los microservicios en Docker no tienen IAM (AGENTS.md §6.3)
+      GATEWAY_OIDC_ENABLED: ${GATEWAY_OIDC_ENABLED:-false}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info
     volumes:

@@ -52,11 +52,11 @@ docker compose run --rm verify
 > Primero esto: mientras el flag esté apagado, todo lo que venga después no altera el comportamiento
 > actual y la suite existente sigue en verde sin tocarla.
 
-- [ ] T-01 · En `application.yml`, declarar `gateway.oidc.signing-enabled: ${GATEWAY_OIDC_ENABLED:false}`. **La propiedad no se llama `gateway.oidc.enabled`**: con ese nombre la variable de entorno se enlazaría directamente a ella y podría apagar la firma en despliegue (REQ-OIDC-07, plan §3.7)
-- [ ] T-02 · Crear `src/main/resources/application-prod.yml` con `gateway.oidc.signing-enabled: true` escrito **literal**, sin `${...}`. Solo eso y el nivel de log: las URLs y el CORS siguen llegando por variable de entorno (REQ-OIDC-07, plan §3.9)
-- [ ] T-03 · Crear el guardia `OidcRequiredInProd`, anotado `@Profile("prod")`, que falle el arranque si la firma está apagada. Va aparte de `OidcConfig` porque debe correr **aunque** el flag esté en `false` (REQ-OIDC-07, plan §3.8)
-- [ ] T-04 · Añadir `GATEWAY_OIDC_ENABLED: ${GATEWAY_OIDC_ENABLED:-false}` al servicio `app` de `docker-compose.yml` (REQ-OIDC-07)
-- [ ] T-05 · Documentar la variable en `.env.example`, con la nota de que en el perfil de despliegue no tiene efecto (REQ-OIDC-07)
+- [x] T-01 · En `application.yml`, declarar `gateway.oidc.signing-enabled: ${GATEWAY_OIDC_ENABLED:false}`. **La propiedad no se llama `gateway.oidc.enabled`**: con ese nombre la variable de entorno se enlazaría directamente a ella y podría apagar la firma en despliegue (REQ-OIDC-07, plan §3.7) — 16/09/2026
+- [x] T-02 · Crear `src/main/resources/application-prod.yml` con `gateway.oidc.signing-enabled: true` escrito **literal**, sin `${...}`. Solo eso y el nivel de log: las URLs y el CORS siguen llegando por variable de entorno (REQ-OIDC-07, plan §3.9) — 16/09/2026
+- [x] T-03 · Crear el guardia `OidcRequiredInProd`, anotado `@Profile("prod")`, que falle el arranque si la firma está apagada. Va aparte de `OidcConfig` porque debe correr **aunque** el flag esté en `false` (REQ-OIDC-07, plan §3.8) — 16/09/2026: en `config`. Pruebas `prodProfile_withSigningDisabled_failsStartup` y `prodProfile_oidcVariableCannotDisableSigning`
+- [x] T-04 · Añadir `GATEWAY_OIDC_ENABLED: ${GATEWAY_OIDC_ENABLED:-false}` al servicio `app` de `docker-compose.yml` (REQ-OIDC-07) — 16/09/2026
+- [x] T-05 · Documentar la variable en `.env.example`, con la nota de que en el perfil de despliegue no tiene efecto (REQ-OIDC-07) — 16/09/2026
 
 **Cierre de bloque:** `docker compose run --rm verify` en verde, sin cambios en las pruebas.
 
@@ -64,10 +64,10 @@ docker compose run --rm verify
 
 ## Bloque 2 — La fuente de tokens
 
-- [ ] T-06 · Crear la interfaz `OidcTokenSource` en el paquete `filter`, con una sola operación: `Mono<String> tokenFor(String audience)`. **Va en `filter`, no en `config`**: la regla ArchUnit `filterDoesNotImportConfig` prohíbe que el filtro mire al paquete `config` (plan §1)
-- [ ] T-07 · Crear `GoogleIdTokenSource` con un `ConcurrentHashMap<String, IdTokenCredentials>` por audience. Se cachea **el objeto de credenciales, no la cadena del token**: la renovación la decide la librería (REQ-OIDC-05, REQ-OIDC-06, plan §3.4)
-- [ ] T-08 · Envolver la llamada bloqueante en `Mono.fromCallable(...).subscribeOn(Schedulers.boundedElastic())`, igual que hace `FirebaseAuthGlobalFilter` con `verifyIdToken` (REQ-NF-OIDC-02)
-- [ ] T-09 · Crear `OidcConfig` en `config`, con `@ConditionalOnProperty` sobre `gateway.oidc.signing-enabled` y los beans de `OidcTokenSource` y del filtro. El bean de credenciales reales lleva su propio interruptor `gateway.oidc.google-credentials.enabled`, que es lo que permite apagarlo en pruebas igual que `FirebaseConfig` (REQ-OIDC-05, REQ-NF-OIDC-03, plan §3.8)
+- [x] T-06 · Crear la interfaz `OidcTokenSource` en el paquete `filter`, con una sola operación: `Mono<String> tokenFor(String audience)`. **Va en `filter`, no en `config`**: la regla ArchUnit `filterDoesNotImportConfig` prohíbe que el filtro mire al paquete `config` (plan §1) — 16/09/2026
+- [x] T-07 · Crear `GoogleIdTokenSource` con un `ConcurrentHashMap<String, IdTokenCredentials>` por audience. Se cachea **el objeto de credenciales, no la cadena del token**: la renovación la decide la librería (REQ-OIDC-05, REQ-OIDC-06, plan §3.4) — 16/09/2026
+- [x] T-08 · Envolver la llamada bloqueante en `Mono.fromCallable(...).subscribeOn(Schedulers.boundedElastic())`, igual que hace `FirebaseAuthGlobalFilter` con `verifyIdToken` (REQ-NF-OIDC-02) — 16/09/2026
+- [x] T-09 · Crear `OidcConfig` en `config`, con `@ConditionalOnProperty` sobre `gateway.oidc.signing-enabled` y los beans de `OidcTokenSource` y del filtro. El bean de credenciales reales lleva su propio interruptor `gateway.oidc.google-credentials.enabled`, que es lo que permite apagarlo en pruebas igual que `FirebaseConfig` (REQ-OIDC-05, REQ-NF-OIDC-03, plan §3.8) — 16/09/2026
 
 **Cierre de bloque:** `docker compose run --rm verify` en verde. Con el flag apagado no debe crearse ningún bean nuevo.
 
@@ -75,10 +75,10 @@ docker compose run --rm verify
 
 ## Bloque 3 — El filtro de firma
 
-- [ ] T-10 · Crear `OidcSigningGlobalFilter` con `getOrder()` devolviendo un valor posterior a la resolución de ruta y anterior al reenvío. **Verifica en el jar de Spring Cloud Gateway 5.0.3 el orden real del filtro de reenvío antes de escribir la constante**; no lo des por hecho (REQ-NF-OIDC-01, plan §3.1)
-- [ ] T-11 · Leer el `Route` del atributo del `exchange` y construir el audience con `esquema://host[:puerto]`, sin path y sin barra final. **No uses la URL completa de la petición**: incluye el path y el destino rechaza el token (REQ-OIDC-02, plan §3.2)
-- [ ] T-12 · Fijar `Authorization: Bearer <token>` con `headers(h -> h.set(...))`. **`set`, nunca `.header(...)`**: el segundo añade un valor más en vez de reemplazar, y deja indefinido cuál lee el destino (REQ-OIDC-01, REQ-OIDC-03, plan §3.5)
-- [ ] T-13 · Si el `exchange` no trae ruta resuelta, seguir la cadena sin firmar: no hay destino que firmar y no debe fallar. Es el caso de una URL que no coincide con ninguna ruta (REQ-OIDC-01)
+- [x] T-10 · Crear `OidcSigningGlobalFilter` con `getOrder()` devolviendo un valor posterior a la resolución de ruta y anterior al reenvío. **Verifica en el jar de Spring Cloud Gateway 5.0.3 el orden real del filtro de reenvío antes de escribir la constante**; no lo des por hecho (REQ-NF-OIDC-01, plan §3.1) — 16/09/2026: verificado con `javap` en el jar 5.0.3: `NettyRoutingFilter` = `LOWEST_PRECEDENCE`, **`WebsocketRoutingFilter` = `LOWEST_PRECEDENCE - 1`**. Se usa `LOWEST_PRECEDENCE - 2` (el plan decía `- 1`, que empata con el de websocket)
+- [x] T-11 · Leer el `Route` del atributo del `exchange` y construir el audience con `esquema://host[:puerto]`, sin path y sin barra final. **No uses la URL completa de la petición**: incluye el path y el destino rechaza el token (REQ-OIDC-02, plan §3.2) — 16/09/2026: `GATEWAY_ROUTE_ATTR` de `ServerWebExchangeUtils`. **Hallazgo:** `Route` agrega el puerto por defecto (`https://x.run.app` → `:443`); `audienceOf` lo omite. Prueba `OidcSigningGlobalFilterUnitTest`
+- [x] T-12 · Fijar `Authorization: Bearer <token>` con `headers(h -> h.set(...))`. **`set`, nunca `.header(...)`**: el segundo añade un valor más en vez de reemplazar, y deja indefinido cuál lee el destino (REQ-OIDC-01, REQ-OIDC-03, plan §3.5) — 16/09/2026
+- [x] T-13 · Si el `exchange` no trae ruta resuelta, seguir la cadena sin firmar: no hay destino que firmar y no debe fallar. Es el caso de una URL que no coincide con ninguna ruta (REQ-OIDC-01) — 16/09/2026
 
 **Cierre de bloque:** `docker compose run --rm verify` en verde.
 
@@ -86,8 +86,8 @@ docker compose run --rm verify
 
 ## Bloque 4 — Fail closed
 
-- [ ] T-14 · Añadir `onErrorResume` que registre en el log la causa original con el `X-Request-Id` y el audience, y devuelva `Mono.error(new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE))` **sin `reason`**: cualquier texto que se le pase puede acabar en la respuesta (REQ-OIDC-04, REQ-OIDC-09, plan §3.6)
-- [ ] T-15 · Comprobar que el catálogo de `GlobalErrorHandler` ya traduce ese `503` a `{"code":"SERVICE_UNAVAILABLE",...}` sin tocar el mensaje de la excepción. Si el catálogo no lo cubre, la corrección va ahí y no en el filtro (REQ-OIDC-09)
+- [x] T-14 · Añadir `onErrorResume` que registre en el log la causa original con el `X-Request-Id` y el audience, y devuelva `Mono.error(new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE))` **sin `reason`**: cualquier texto que se le pase puede acabar en la respuesta (REQ-OIDC-04, REQ-OIDC-09, plan §3.6) — 16/09/2026: **desviación del plan §3.5:** el `onErrorResume` va antes del `flatMap`. Con el orden del boceto, un timeout del destino salía como `503` de firma en vez de `504` (comprobado; prueba `downstreamTimeout_isStill504WithSigningEnabled`). Se añadió `switchIfEmpty` para que una fuente vacía también cierre
+- [x] T-15 · Comprobar que el catálogo de `GlobalErrorHandler` ya traduce ese `503` a `{"code":"SERVICE_UNAVAILABLE",...}` sin tocar el mensaje de la excepción. Si el catálogo no lo cubre, la corrección va ahí y no en el filtro (REQ-OIDC-09) — 16/09/2026: el catálogo ya tenía `SERVICE_UNAVAILABLE`; sin cambios en `GlobalErrorHandler`
 
 **Cierre de bloque:** `docker compose run --rm verify` en verde. Revisa el log: la causa real tiene que aparecer ahí, y en ningún otro sitio.
 
@@ -98,30 +98,30 @@ docker compose run --rm verify
 > Son la única forma de demostrar `REQ-NF-OIDC-03`: que todo esto se verifica sin credenciales de
 > Google ni acceso a GCP.
 
-- [ ] T-16 · Crear `TestOidcConfig` con un `OidcTokenSource` falso que registre los audiences pedidos y pueda fallar a demanda. Añadir `gateway.oidc.google-credentials.enabled: false` a `application-test.yml`, para que la implementación real nunca se construya en pruebas (REQ-NF-OIDC-03, plan §4)
-- [ ] T-17 · Crear `OidcSigningFilterTest` con el flag encendido por propiedad y las pruebas 1, 2 y 5 del plan: el destino recibe el token OIDC en un solo valor; el audience coincide con la URI de la ruta sin path ni barra final; el ID Token de Firebase no aparece en el `Authorization` saliente (REQ-OIDC-01, REQ-OIDC-02, REQ-OIDC-03)
-- [ ] T-18 · Añadir las pruebas 3 y 4: `POST /webhooks/wompi` también llega firmado, y un `Authorization: Basic xyz` del cliente se reemplaza en vez de sobrevivir (REQ-OIDC-01, REQ-OIDC-03)
-- [ ] T-19 · Añadir la prueba 6: la fuente falla → `503` con `code: SERVICE_UNAVAILABLE`, el cuerpo no contiene `Exception`, `java.`, el audience ni el host, y `getRequestCount()` demuestra que **no se reenvió nada** (REQ-OIDC-04, REQ-OIDC-09)
-- [ ] T-20 · Añadir la prueba 7 en una clase sin la propiedad del flag: el destino no recibe `Authorization`, y el `401` sin token de Firebase sigue funcionando. Demuestra que el flag apaga solo el paso saliente (REQ-OIDC-07, REQ-OIDC-08)
-- [ ] T-21 · Añadir la prueba 8: leer `application-prod.yml` del classpath y afirmar que declara el flag literal, sin `${`. No arranca contexto; es la forma barata de fijar una regla que si no solo se descubre rota en despliegue (REQ-OIDC-07)
+- [x] T-16 · Crear `TestOidcConfig` con un `OidcTokenSource` falso que registre los audiences pedidos y pueda fallar a demanda. Añadir `gateway.oidc.google-credentials.enabled: false` a `application-test.yml`, para que la implementación real nunca se construya en pruebas (REQ-NF-OIDC-03, plan §4) — 16/09/2026
+- [x] T-17 · Crear `OidcSigningFilterTest` con el flag encendido por propiedad y las pruebas 1, 2 y 5 del plan: el destino recibe el token OIDC en un solo valor; el audience coincide con la URI de la ruta sin path ni barra final; el ID Token de Firebase no aparece en el `Authorization` saliente (REQ-OIDC-01, REQ-OIDC-02, REQ-OIDC-03) — 16/09/2026
+- [x] T-18 · Añadir las pruebas 3 y 4: `POST /webhooks/wompi` también llega firmado, y un `Authorization: Basic xyz` del cliente se reemplaza en vez de sobrevivir (REQ-OIDC-01, REQ-OIDC-03) — 16/09/2026
+- [x] T-19 · Añadir la prueba 6: la fuente falla → `503` con `code: SERVICE_UNAVAILABLE`, el cuerpo no contiene `Exception`, `java.`, el audience ni el host, y `getRequestCount()` demuestra que **no se reenvió nada** (REQ-OIDC-04, REQ-OIDC-09) — 16/09/2026: `tokenSourceFailure_returns503WithoutForwarding`
+- [x] T-20 · Añadir la prueba 7 en una clase sin la propiedad del flag: el destino no recibe `Authorization`, y el `401` sin token de Firebase sigue funcionando. Demuestra que el flag apaga solo el paso saliente (REQ-OIDC-07, REQ-OIDC-08) — 16/09/2026: `oidcSigningFlagOff_noSigningFilterBean` en `FirebaseAuthGlobalFilterTest`, que ya corre sin el flag y afirma el `Authorization` vacío y el `401`
+- [x] T-21 · Añadir la prueba 8: leer `application-prod.yml` del classpath y afirmar que declara el flag literal, sin `${`. No arranca contexto; es la forma barata de fijar una regla que si no solo se descubre rota en despliegue (REQ-OIDC-07) — 16/09/2026
 
-**Cierre de bloque:** `docker compose run --rm verify` en verde, con las pruebas nuevas contadas en la salida.
+**Cierre de bloque:** `docker compose run --rm verify` en verde, con las pruebas nuevas contadas en la salida. ✅ 16/09/2026 — Bloques 1 a 5 cerrados juntos: `Tests run: 62, Failures: 0, Errors: 0`, `BUILD SUCCESS`. Además `OidcSigningGlobalFilterUnitTest` (2) y la prueba de `504`, que no estaban en el plan
 
 ---
 
 ## Bloque 6 — Documentación
 
-- [ ] T-22 · Añadir a la tabla de componentes de `AGENTS.md` §4 las cuatro clases nuevas, y quitar la nota de que el componente de firma de §6.3 todavía no existe (plan §5)
-- [ ] T-23 · Vaciar la tabla de brechas de `AGENTS.md` §6.5 y anotar la fecha y el PR que la cerró. Es la última fila pendiente del modelo de seguridad (plan §5)
-- [ ] T-24 · Actualizar la tabla de variables de `AGENTS.md` §9 y la de `README.md`: `GATEWAY_OIDC_ENABLED` deja de ser una promesa, con la aclaración de que en el perfil de despliegue no tiene efecto (plan §5)
-- [ ] T-25 · Actualizar `docs/COMO-FUNCIONA.md` §3 y §4: la sección 3 afirma que no existe una sola línea de firma OIDC, y la 4 que el perfil de despliegue no existe. Las dos cosas dejan de ser ciertas con este PR (plan §5)
-- [ ] T-26 · Rellenar la bitácora de IA del mismo día, según `AGENTS.md` §10
+- [x] T-22 · Añadir a la tabla de componentes de `AGENTS.md` §4 las cuatro clases nuevas, y quitar la nota de que el componente de firma de §6.3 todavía no existe (plan §5) — 16/09/2026
+- [x] T-23 · Vaciar la tabla de brechas de `AGENTS.md` §6.5 y anotar la fecha y el PR que la cerró. Es la última fila pendiente del modelo de seguridad (plan §5) — 16/09/2026
+- [x] T-24 · Actualizar la tabla de variables de `AGENTS.md` §9 y la de `README.md`: `GATEWAY_OIDC_ENABLED` deja de ser una promesa, con la aclaración de que en el perfil de despliegue no tiene efecto (plan §5) — 16/09/2026: `AGENTS.md` §9 actualizado. `README.md` no tiene tabla de variables: nada que cambiar
+- [x] T-25 · Actualizar `docs/COMO-FUNCIONA.md` §3 y §4: la sección 3 afirma que no existe una sola línea de firma OIDC, y la 4 que el perfil de despliegue no existe. Las dos cosas dejan de ser ciertas con este PR (plan §5) — 16/09/2026
+- [x] T-26 · Rellenar la bitácora de IA del mismo día, según `AGENTS.md` §10 — 16/09/2026
 
 ---
 
 ## Bloque 7 — Cierre
 
-- [ ] T-27 · Revisar el diff completo con `git diff develop...HEAD` y confirmar: ningún secreto real, ninguna URL de microservicio escrita en el código, ningún comando de GCP presentado como ejecutado
+- [x] T-27 · Revisar el diff completo con `git diff develop...HEAD` y confirmar: ningún secreto real, ninguna URL de microservicio escrita en el código, ningún comando de GCP presentado como ejecutado — 16/09/2026: sin secretos, sin URLs de microservicio en `src/main` (solo `x.run.app` de ejemplo en Javadoc), sin comandos `gcloud` presentados como ejecutados
 - [ ] T-28 · Recorrer el DoD del spec §7 y marcar cada casilla con la evidencia real: salida de comando o número de prueba. Las casillas de despliegue quedan sin marcar mientras el Bloque 0 siga bloqueado, y eso se dice en el PR
 - [ ] T-29 · Abrir el PR hacia `develop` con el título `CM-104 | feat(gateway): firmar las llamadas salientes con token OIDC [IA-ASISTIDO]`, y avisar en la descripción a infraestructura de las tareas del Bloque 0 y a Cuentas de `GW-TBD-14`
 

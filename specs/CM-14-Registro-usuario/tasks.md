@@ -96,7 +96,7 @@ decisiones del Gateway están cerradas.
 
 ## Bloque 3 — Dependencia con OIDC
 
-- [ ] T-20 · Cuando se implemente `specs/CM-104-correcciones-OIDC/`, incluir `POST /api/v1/users` en la prueba de contrato de `REQ-OIDC-01` (REQ-REG-10)
+- [x] T-20 · Cuando se implemente `specs/CM-104-correcciones-OIDC/`, incluir `POST /api/v1/users` en la prueba de contrato de `REQ-OIDC-01` (REQ-REG-10) — 16/09/2026, en la rama `CM-104-correcciones-OIDC`: `OidcSigningFilterTest.registration_isSignedLikeAnyOtherRoute`. También la guardia pendiente del plan §3.3: `local` y `prod` no arrancan juntos (`devRoutes_withProdProfile_failsStartup`)
 
 ---
 

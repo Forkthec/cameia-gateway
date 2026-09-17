@@ -22,6 +22,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpMethod;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -70,6 +71,9 @@ class FirebaseAuthGlobalFilterTest {
 
     @Autowired
     FirebaseAuth firebaseAuth;
+
+    @Autowired
+    ApplicationContext applicationContext;
 
     @BeforeAll
     static void startMockServer() throws IOException {
@@ -581,6 +585,18 @@ class FirebaseAuthGlobalFilterTest {
 
         assertThat(result.getStatus().value()).isEqualTo(status);
         assertThat(new String(result.getResponseBody(), StandardCharsets.UTF_8)).isEqualTo(body);
+    }
+
+    // ── OIDC prueba 7: con el flag apagado no hay firma (REQ-OIDC-07, REQ-OIDC-08) ──
+
+    /**
+     * REQ-OIDC-07, REQ-OIDC-08: esta clase corre sin {@code gateway.oidc.signing-enabled}, así que
+     * el filtro de firma no existe. El resto de pruebas de la clase demuestra la otra mitad: el
+     * destino no recibe {@code Authorization} y el {@code 401} sin token sigue funcionando.
+     */
+    @Test
+    void oidcSigningFlagOff_noSigningFilterBean() {
+        assertThat(applicationContext.getBeansOfType(OidcSigningGlobalFilter.class)).isEmpty();
     }
 
     // ── Utilidad ─────────────────────────────────────────────────────────────

@@ -55,6 +55,17 @@ class VersionedYamlTest {
         assertThat(properties.getProperty("spring.profiles.active", "")).doesNotContain("local");
     }
 
+    /**
+     * REQ-OIDC-07, prueba 8 del plan: {@code application-prod.yml} fija la firma en {@code true}
+     * literal. Con un {@code ${...}} una variable de entorno podría apagarla en despliegue.
+     */
+    @Test
+    void prodYaml_declaresSigningEnabledAsLiteral() {
+        Properties properties = load(new PathMatchingResourcePatternResolver().getResource("classpath:application-prod.yml"));
+
+        assertThat(properties.getProperty("gateway.oidc.signing-enabled")).isEqualTo("true");
+    }
+
     private Resource[] versionedYamlFiles() throws IOException {
         return new PathMatchingResourcePatternResolver().getResources("classpath*:application*.yml");
     }

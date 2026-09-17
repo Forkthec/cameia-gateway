@@ -89,6 +89,14 @@ spring:
           httpclient:
             response-timeout: ${GATEWAY_TIMEOUT_MS:30000}ms
 
+# ── Firma OIDC saliente (AGENTS.md §6.3, CM-104-correcciones-OIDC) ───────
+# La propiedad NO se llama gateway.oidc.enabled: con ese nombre GATEWAY_OIDC_ENABLED se enlazaría
+# directo a ella y podría apagar la firma en prod. Aquí la variable solo alimenta el placeholder, y
+# application-prod.yml lo fija en true literal (REQ-OIDC-07).
+gateway:
+  oidc:
+    signing-enabled: ${GATEWAY_OIDC_ENABLED:false}
+
 server:
   # Cloud Run inyecta PORT; Docker Compose local usa SERVER_PORT. Mismo patrón que
   # cameia-perfil (application.yml). CM-153.

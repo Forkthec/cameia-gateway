@@ -15,6 +15,9 @@ spring:
 gateway:
   firebase:
     enabled: false  # FirebaseConfig no corre; el @TestConfiguration provee el mock
+  oidc:
+    google-credentials:
+      enabled: false  # la fuente real de tokens nunca se construye en pruebas (REQ-NF-OIDC-03)
 
 # Las URLs downstream se sobrescriben dinámicamente en cada test con @DynamicPropertySource
 # (el puerto de MockWebServer se asigna en runtime).
