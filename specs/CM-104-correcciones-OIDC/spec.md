@@ -347,21 +347,21 @@ audience sale de `CAMEIA_*_URL`, y esas variables deberán valer la URL `*.run.a
 
 Implementación y pruebas, sin GCP:
 
-- [ ] `docker compose run --rm verify` en verde, sin credenciales de Google en el entorno
-- [ ] Con el paso de firma activo, una ruta de Caso A envía `Authorization` con el token OIDC y un solo valor (prueba de contrato)
-- [ ] Con el paso de firma activo, `POST /webhooks/wompi` también llega firmado (prueba de contrato)
-- [ ] Un cliente que envía su propio `Authorization` a una ruta pública no logra que ese valor llegue al microservicio (prueba de contrato)
-- [ ] El ID Token de Firebase no aparece nunca en el `Authorization` saliente (prueba de contrato)
-- [ ] El audience solicitado coincide con la `uri` de la ruta (prueba de contrato)
-- [ ] Fallo al obtener el token → `503`, sin detalle interno en el cuerpo, y el microservicio no recibe nada (prueba de contrato)
-- [ ] Con el paso de firma apagado, la solicitud sale sin `Authorization` y la validación de Firebase sigue funcionando (prueba de contrato)
-- [ ] El archivo del perfil de despliegue fija el paso de firma sin placeholder, y hay una prueba que lo demuestra
-- [ ] `.env.example` y `docker-compose.yml` documentan `GATEWAY_OIDC_ENABLED`
-- [ ] `AGENTS.md` §4 incluye las clases nuevas y §6.5 queda **sin ninguna fila pendiente**
-- [ ] `docs/COMO-FUNCIONA.md` §3 deja de decir que el paso OIDC no existe
-- [ ] Ningún secreto real en el diff del PR
-- [ ] Bitácora IA rellenada el mismo día
-- [ ] Título del PR: `CM-104 | feat(gateway): firmar las llamadas salientes con token OIDC [IA-ASISTIDO]`
+- [x] `docker compose run --rm verify` en verde, sin credenciales de Google en el entorno — `docker compose run --rm verify` 17/09/2026: `Tests run: 62, Failures: 0`, `BUILD SUCCESS`; `mvn clean compile test-compile -Xlint:all` sin advertencias
+- [x] Con el paso de firma activo, una ruta de Caso A envía `Authorization` con el token OIDC y un solo valor (prueba de contrato) — `OidcSigningFilterTest.caseA_downstreamReceivesSingleOidcToken`
+- [x] Con el paso de firma activo, `POST /webhooks/wompi` también llega firmado (prueba de contrato) — `wompiWebhook_withoutFirebaseToken_isSigned`
+- [x] Un cliente que envía su propio `Authorization` a una ruta pública no logra que ese valor llegue al microservicio (prueba de contrato) — `clientBasicAuthorization_isReplacedByOidcToken` y `OidcSigningGlobalFilterUnitTest.clientAuthorization_isReplacedNotAppended` (detecta `add` en lugar de `set`)
+- [x] El ID Token de Firebase no aparece nunca en el `Authorization` saliente (prueba de contrato) — `caseA_firebaseIdToken_neverReachesDownstream`
+- [x] El audience solicitado coincide con la `uri` de la ruta (prueba de contrato) — `audience_matchesRouteUriWithoutPathOrTrailingSlash`; con `https://*.run.app`, `OidcSigningGlobalFilterUnitTest` (sin `:443`)
+- [x] Fallo al obtener el token → `503`, sin detalle interno en el cuerpo, y el microservicio no recibe nada (prueba de contrato) — `tokenSourceFailure_returns503WithoutForwarding`; y un timeout del destino sigue en `504`: `downstreamTimeout_isStill504WithSigningEnabled`
+- [x] Con el paso de firma apagado, la solicitud sale sin `Authorization` y la validación de Firebase sigue funcionando (prueba de contrato) — `FirebaseAuthGlobalFilterTest` completa corre sin el flag; `oidcSigningFlagOff_noSigningFilterBean`
+- [x] El archivo del perfil de despliegue fija el paso de firma sin placeholder, y hay una prueba que lo demuestra — `VersionedYamlTest.prodYaml_declaresSigningEnabledAsLiteral`; `prodProfile_oidcVariableCannotDisableSigning`
+- [x] `.env.example` y `docker-compose.yml` documentan `GATEWAY_OIDC_ENABLED` — 16/09/2026
+- [x] `AGENTS.md` §4 incluye las clases nuevas y §6.5 queda **sin ninguna fila pendiente** — §6.5 sin tabla de brechas de código; lo que queda es de despliegue (Bloque 0) y está dicho explícitamente
+- [x] `docs/COMO-FUNCIONA.md` §3 deja de decir que el paso OIDC no existe — 16/09/2026
+- [x] Ningún secreto real en el diff del PR — revisado sobre `git diff origin/develop...HEAD` el 17/09/2026
+- [x] Bitácora IA rellenada el mismo día — `Entregables/16092026_BitacoraIA_Codigo_E2.md` y `17092026_BitacoraIA_Codigo_E2.md`
+- [ ] Título del PR: `CM-104 | feat(gateway): firmar las llamadas salientes con token OIDC [IA-ASISTIDO]` — *17/09/2026: no hay PR propio; viaja en el PR de CM-14 (`specs/CM-14-Registro-usuario/spec.md` §6)*
 
 Despliegue, cuando GCP exista (Bloque 0 de `tasks.md`):
 

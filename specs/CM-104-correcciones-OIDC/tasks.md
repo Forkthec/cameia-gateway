@@ -123,8 +123,8 @@ docker compose run --rm verify
 ## Bloque 7 — Cierre
 
 - [x] T-27 · Revisar el diff completo con `git diff develop...HEAD` y confirmar: ningún secreto real, ninguna URL de microservicio escrita en el código, ningún comando de GCP presentado como ejecutado — 16/09/2026: sin secretos, sin URLs de microservicio en `src/main` (solo `x.run.app` de ejemplo en Javadoc), sin comandos `gcloud` presentados como ejecutados
-- [ ] T-28 · Recorrer el DoD del spec §7 y marcar cada casilla con la evidencia real: salida de comando o número de prueba. Las casillas de despliegue quedan sin marcar mientras el Bloque 0 siga bloqueado, y eso se dice en el PR
-- [ ] T-29 · Abrir el PR hacia `develop` con el título `CM-104 | feat(gateway): firmar las llamadas salientes con token OIDC [IA-ASISTIDO]`, y avisar en la descripción a infraestructura de las tareas del Bloque 0 y a Cuentas de `GW-TBD-14`
+- [x] T-28 · Recorrer el DoD del spec §7 y marcar cada casilla con la evidencia real: salida de comando o número de prueba. Las casillas de despliegue quedan sin marcar mientras el Bloque 0 siga bloqueado, y eso se dice en el PR — 17/09/2026: bloque sin GCP marcado; el bloque de despliegue queda sin marcar
+- [ ] T-29 · Abrir el PR hacia `develop` con el título `CM-104 | feat(gateway): firmar las llamadas salientes con token OIDC [IA-ASISTIDO]`, y avisar en la descripción a infraestructura de las tareas del Bloque 0 y a Cuentas de `GW-TBD-14` · *17/09/2026: sin PR propio por decisión de Juan Vela; viaja en el PR de CM-14. Aviso a infraestructura del Bloque 0 y T-INF-05, y a Cuentas de `GW-TBD-14`, en esa descripción*
 
 ---
 

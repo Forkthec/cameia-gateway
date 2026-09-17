@@ -287,7 +287,7 @@ Continúa la serie `GW-TBD` desde `GW-TBD-15`.
 | Rate limit | GCP, delante del Gateway (C-4) |
 | Propagar la IP del cliente | No hace falta para Firebase (C-4). Entra con requisito propio si Cuentas la necesita |
 | Versionado `v2` de rutas | Sin HU que lo pida |
-| Firma OIDC | `specs/CM-104-correcciones-OIDC/`. Aquí solo se exige que cubra esta ruta |
+| Firma OIDC | `specs/CM-104-correcciones-OIDC/`. **Actualizado 17/09/2026 (Fase 7):** por decisión de Juan Vela viaja en el mismo PR que esta HU, porque `REQ-REG-10` (el registro firmado) y la guardia `local` + `prod` del plan §3.3 no se podían cerrar sin ella. Sus requisitos siguen en su propio spec |
 
 ---
 
@@ -295,26 +295,26 @@ Continúa la serie `GW-TBD` desde `GW-TBD-15`.
 
 Bloque prioritario (health en desarrollo):
 
-- [ ] Con el perfil de desarrollo, `GET` a cada health de la lista llega al microservicio sin token y sin `X-User-*` del cliente (prueba de contrato)
-- [ ] Sin el perfil de desarrollo, el mismo `GET` responde `401` y el microservicio no recibe nada (prueba)
-- [ ] `POST` al health y variantes de ruta (`/health/`, `/health/x`) responden `401` con el perfil activo (prueba)
-- [ ] El arranque falla con la lista de desarrollo activa y `K_SERVICE` definida (prueba)
-- [ ] `application.yml` ya no activa `local` por defecto
-- [ ] `"/api/v1/users/health"` ya no está en la lista base
+- [x] Con el perfil de desarrollo, `GET` a cada health de la lista llega al microservicio sin token y sin `X-User-*` del cliente (prueba de contrato) — `DevHealthRoutesTest.devHealth_withLocalProfile_reachesDownstreamWithoutToken` (5 rutas)
+- [x] Sin el perfil de desarrollo, el mismo `GET` responde `401` y el microservicio no recibe nada (prueba) — `FirebaseAuthGlobalFilterTest.devHealth_withoutLocalProfile_returns401`
+- [x] `POST` al health y variantes de ruta (`/health/`, `/health/x`) responden `401` con el perfil activo (prueba) — `devHealth_postMethod_returns401`, `devHealth_trailingSlashOrSubpath_returns401`
+- [x] El arranque falla con la lista de desarrollo activa y `K_SERVICE` definida (prueba) — `GatewayStartupTest.devRoutes_onCloudRun_failsStartup`; además `devRoutes_withProdProfile_failsStartup`
+- [x] `application.yml` ya no activa `local` por defecto — `VersionedYamlTest.applicationYaml_hasNoDefaultLocalProfile`; comprobado sin la variable: `No active profile set`
+- [x] `"/api/v1/users/health"` ya no está en la lista base — `PUBLIC_ROUTES` solo tiene `POST /webhooks/wompi` y `POST /api/v1/users`
 
 Registro:
 
-- [ ] `POST /api/v1/users` sin token llega a Cuentas, sin `X-User-*` ni `Authorization` del cliente (prueba de contrato)
-- [ ] `GET`, `PUT`, `PATCH` y `DELETE /api/v1/users` sin token responden `401` (prueba)
-- [ ] Un `409` y un `422` de Cuentas llegan al cliente con estado y cuerpo intactos (prueba)
-- [ ] El wiretap de Reactor Netty está apagado en todos los perfiles versionados (prueba)
-- [ ] `POST /webhooks/wompi` sigue funcionando igual (la prueba existente no se toca)
+- [x] `POST /api/v1/users` sin token llega a Cuentas, sin `X-User-*` ni `Authorization` del cliente (prueba de contrato) — `registration_withoutToken_reachesAccountsWithoutClientCredentials`
+- [x] `GET`, `PUT`, `PATCH` y `DELETE /api/v1/users` sin token responden `401` (prueba) — `usersRoot_nonPostWithoutToken_returns401` (4 métodos)
+- [x] Un `409` y un `422` de Cuentas llegan al cliente con estado y cuerpo intactos (prueba) — `registration_downstreamError_isReturnedUnchanged`
+- [x] El wiretap de Reactor Netty está apagado en todos los perfiles versionados (prueba) — `VersionedYamlTest.versionedYaml_doesNotEnableWiretap`
+- [x] `POST /webhooks/wompi` sigue funcionando igual (la prueba existente no se toca) — `git diff origin/develop...HEAD` no cambia ni borra líneas de esa prueba
 
 Siempre:
 
-- [ ] `docker compose run --rm verify` en verde, sin credenciales
-- [ ] `AGENTS.md` §4, §5 y §6.2, y `docs/COMO-FUNCIONA.md`, reflejan las listas y el emparejamiento por método
+- [x] `docker compose run --rm verify` en verde, sin credenciales — `docker compose run --rm verify` 17/09/2026: `Tests run: 62, Failures: 0`, `BUILD SUCCESS`; `mvn clean compile test-compile -Xlint:all` sin advertencias
+- [x] `AGENTS.md` §4, §5 y §6.2, y `docs/COMO-FUNCIONA.md`, reflejan las listas y el emparejamiento por método — actualizados el 16/09/2026
 - [ ] Avisos enviados: DevOps (C-4), Entrevista (C-8), Cuentas y frontend (C-6)
-- [ ] Ningún secreto real en el diff
-- [ ] Bitácora IA rellenada el mismo día (`AGENTS.md` §10)
-- [ ] Título del PR: `CM-14 | feat(gateway): rutas públicas por método y registro de usuario [IA-ASISTIDO]`
+- [x] Ningún secreto real en el diff — revisado sobre `git diff origin/develop...HEAD` el 17/09/2026
+- [x] Bitácora IA rellenada el mismo día (`AGENTS.md` §10) — `Entregables/16092026_BitacoraIA_Codigo_E2.md` y `17092026_BitacoraIA_Codigo_E2.md`
+- [ ] Título del PR: `CM-14 | feat(gateway): registro de usuario con rutas públicas por método y firma OIDC saliente [IA-ASISTIDO]` — *cambiado el 17/09/2026: el PR incluye `specs/CM-104-correcciones-OIDC/` (ver §6)*
