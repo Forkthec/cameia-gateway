@@ -86,15 +86,24 @@ jobs:
       # reales de Cloud Run de esos tres servicios, verificadas contra los servicios
       # desplegados -- un hostname de docker-compose no es alcanzable fuera de una red
       # local.
-      # Nota: apuntar a la URL correcta no basta por sí solo para que la llamada
-      # funcione en la práctica -- los tres servicios destino tienen ingreso interno y
-      # rechazan toda petición que no traiga una credencial de identidad válida, y este
-      # gateway todavía no firma ninguna hacia sus llamadas salientes.
       # FIREBASE_PROJECT_ID es obligatorio: FirebaseConfig.java falla el arranque sin
       # él (fail-fast, REQ-06) — mismo proyecto que VITE_FIREBASE_PROJECT_ID en
-      # cameia-web. Sin --allow-unauthenticated a propósito: el SA de despliegue no
-      # tiene (ni necesita) permiso para tocar la política IAM del servicio — el
-      # acceso público se otorga una sola vez, fuera de este pipeline (ver PR).
+      # cameia-web.
+      #
+      # --service-account usa una identidad de ejecución propia y exclusiva de este
+      # servicio (no la identidad por defecto que comparten otros servicios del
+      # proyecto): es esa identidad, y solo ella, la que tiene permiso de invocación
+      # sobre los tres destinos anteriores. Reutilizar una identidad compartida aquí
+      # anularía esa separación, porque cualquier otra cosa que corra con la misma
+      # identidad heredaría el mismo acceso sin necesitarlo.
+      # Nota: tener el permiso de invocación no basta por sí solo para que la llamada
+      # funcione en la práctica -- este servicio todavía no firma ninguna credencial de
+      # identidad hacia sus llamadas salientes, así que un destino con ingreso interno
+      # seguiría rechazando la petición hasta que ese código exista.
+      #
+      # Sin --allow-unauthenticated a propósito: el SA de despliegue no tiene (ni
+      # necesita) permiso para tocar la política IAM del servicio — el acceso público
+      # se otorga una sola vez, fuera de este pipeline.
       - name: Desplegar a Cloud Run
         run: |
           gcloud run deploy "${{ inputs.servicio }}" \
@@ -104,7 +113,7 @@ jobs:
             --platform=managed \
             --min-instances=${{ inputs.min_instances }} \
             --max-instances=2 \
-            --service-account="25798898664-compute@developer.gserviceaccount.com" \
+            --service-account="cameia-gateway-run@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com" \
             --set-env-vars="CAMEIA_PERFIL_URL=https://cameia-perfil-og25p6yagq-ue.a.run.app,CAMEIA_CUENTAS_URL=https://cameia-cuentas-og25p6yagq-ue.a.run.app,CAMEIA_ENTREVISTA_URL=https://cameia-entrevista-og25p6yagq-ue.a.run.app,FIREBASE_PROJECT_ID=${{ vars.GCP_PROJECT_ID }}"
 
       - name: URL del servicio desplegado

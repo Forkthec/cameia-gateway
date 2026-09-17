@@ -96,6 +96,10 @@ jobs:
 
       # Mismo marcador temporal para CAMEIA_PERFIL_URL/CAMEIA_CUENTAS_URL que en
       # staging: Perfil y Cuentas tampoco tienen despliegue de producción todavía.
+      #
+      # --service-account: misma identidad de ejecución dedicada que usa staging (ver
+      # desplegar-servicio.yml) -- producción necesita el mismo permiso de invocación
+      # sobre sus propios destinos de producción, cuando estos existan.
       - name: Desplegar a Cloud Run (mismo digest de staging, sin reconstruir)
         run: |
           gcloud run deploy "${{ env.SERVICE_PROD }}" \
@@ -105,7 +109,7 @@ jobs:
             --platform=managed \
             --min-instances=0 \
             --max-instances=2 \
-            --service-account="25798898664-compute@developer.gserviceaccount.com" \
+            --service-account="cameia-gateway-run@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com" \
             --set-env-vars="CAMEIA_PERFIL_URL=http://cameia-perfil:8080,CAMEIA_CUENTAS_URL=http://cameia-cuentas:8080"
 
       - name: URL del servicio desplegado
