@@ -9,8 +9,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
+import org.springframework.core.env.Environment;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.server.reactive.ServerHttpRequest;
@@ -37,9 +39,10 @@ import static java.util.stream.Collectors.joining;
  *       {@code Authorization}. Si es válido, borra toda cabecera {@code X-User-*} que haya enviado
  *       el cliente, escribe las del token y retira el {@code Authorization} original. Si falta o es
  *       inválido, responde {@code 401 AUTH_REQUIRED} sin reenviar nada.</li>
- *   <li><b>Caso B — ruta pública</b> ({@code PUBLIC_PATHS}). No verifica token, pero igualmente
- *       borra toda cabecera {@code X-User-*} del cliente: no hay usuario autenticado y el
- *       microservicio no debe creer que lo hay.</li>
+ *   <li><b>Caso B — ruta pública</b> ({@code PUBLIC_ROUTES}, y {@code DEV_PUBLIC_ROUTES} con el
+ *       perfil {@code local}), por método y ruta exactos. No verifica token, pero igualmente borra
+ *       toda cabecera {@code X-User-*} y el {@code Authorization} del cliente: no hay usuario
+ *       autenticado y el microservicio no debe creer que lo hay.</li>
  * </ul>
  *
  * <p>En los dos casos garantiza un {@code X-Request-Id} en la solicitud reenviada y en la respuesta
@@ -52,7 +55,7 @@ import static java.util.stream.Collectors.joining;
  * <p>Este filtro no aplica reglas de negocio ni interpreta los claims: los propaga tal como vienen
  * en el token (REQ-08).
  *
- * <p>Requisitos: {@code specs/CM-104-correcciones/spec.md}.
+ * <p>Requisitos: {@code specs/CM-104-correcciones/spec.md} y {@code specs/CM-14-Registro-usuario/spec.md}.
  */
 @Component
 public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
@@ -94,9 +97,34 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
             X_USER_ID, X_USER_EMAIL, X_USER_ROLES, X_USER_PLAN
     );
 
+    /** Perfil de desarrollo: el único que abre {@code DEV_PUBLIC_ROUTES} (CM-14 REQ-REG-01). */
+    static final String DEV_PROFILE = "local";
+
+    /** Perfil de despliegue: nunca puede convivir con {@code DEV_PROFILE} (CM-14 plan §3.3). */
+    static final String DEPLOY_PROFILE = "prod";
+
     /**
-     * Rutas del Gateway que no exigen token de Firebase (Caso B). La comparación es exacta, sin
-     * comodines.
+     * Variable que Cloud Run inyecta en todo contenedor de servicio. Si existe, el Gateway está
+     * desplegado y la lista de desarrollo no puede estar activa (CM-14 REQ-REG-02).
+     */
+    static final String CLOUD_RUN_SERVICE_VARIABLE = "K_SERVICE";
+
+    /**
+     * Entrada pública: método HTTP y ruta exactos. Al ser {@code record}, {@code equals} compara
+     * por valor, así que {@code Set.contains} sigue siendo una comparación exacta sin comodines
+     * (CM-14 REQ-REG-03, REQ-REG-06).
+     *
+     * @param method método HTTP que debe tener la solicitud
+     * @param path   ruta exacta, sin query string
+     */
+    private record PublicRoute(HttpMethod method, String path) { }
+
+    /**
+     * Rutas del Gateway que no exigen token de Firebase (Caso B) en cualquier perfil. Se comparan
+     * por método y ruta: otro método sobre la misma ruta es Caso A (CM-14 REQ-REG-06).
+     *
+     * <p>Vive en código y no en YAML a propósito: cualquier propiedad enlazada se puede sobrescribir
+     * con una variable de entorno, y abrir una ruta debe exigir recompilar (CM-14 REQ-REG-02).
      *
      * <p>Aquí no van {@code /actuator/health} ni {@code /actuator/info}, y no es un olvido (REQ-13).
      * Actuator se atiende con su propio {@code HandlerMapping} (orden {@code -100}), antes que las
@@ -104,17 +132,52 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
      * públicas por arquitectura, no por esta lista. Una entrada aquí aparentaría controlar algo que
      * no controla. La prueba {@code actuatorHealth_withoutToken_returns200} lo demuestra.
      */
-    private static final Set<String> PUBLIC_PATHS = Set.of(
-            "/webhooks/wompi"
+    private static final Set<PublicRoute> PUBLIC_ROUTES = Set.of(
+            new PublicRoute(HttpMethod.POST, "/webhooks/wompi"),
+            new PublicRoute(HttpMethod.POST, "/api/v1/users")   // registro de usuario (CM-14 REQ-REG-05)
+    );
+
+    /**
+     * Health v1 de cada microservicio, públicos solo con el perfil de desarrollo (CM-14 REQ-REG-01).
+     * Una versión nueva de un health no se abre sola: se añade aquí y se recompila.
+     */
+    private static final Set<PublicRoute> DEV_PUBLIC_ROUTES = Set.of(
+            new PublicRoute(HttpMethod.GET, "/api/v1/users/health"),
+            new PublicRoute(HttpMethod.GET, "/api/v1/profiles/health"),
+            new PublicRoute(HttpMethod.GET, "/api/v1/interviews/health"),
+            new PublicRoute(HttpMethod.GET, "/api/v1/voice-service/health"),
+            new PublicRoute(HttpMethod.GET, "/api/v1/audit/health")
     );
 
     private final FirebaseAuth firebaseAuth;
 
+    /** Se calcula una sola vez: los perfiles activos no cambian después del arranque. */
+    private final boolean devRoutesEnabled;
+
     /**
      * @param firebaseAuth cliente del Admin SDK de Firebase con el que se verifican los ID Tokens
+     * @param environment  entorno de Spring, del que se leen los perfiles activos y {@code K_SERVICE}
+     * @throws IllegalStateException si el perfil de desarrollo está activo dentro de Cloud Run o
+     *                               junto al perfil de despliegue
      */
-    public FirebaseAuthGlobalFilter(FirebaseAuth firebaseAuth) {
+    public FirebaseAuthGlobalFilter(FirebaseAuth firebaseAuth, Environment environment) {
         this.firebaseAuth = firebaseAuth;
+        this.devRoutesEnabled = environment.matchesProfiles(DEV_PROFILE);
+        if (devRoutesEnabled && isDeployment(environment)) {
+            // CM-14 REQ-REG-02: se falla el arranque en vez de abrir los health en despliegue
+            throw new IllegalStateException("El perfil '" + DEV_PROFILE + "' abre rutas públicas de "
+                    + "desarrollo y no puede estar activo en Cloud Run (" + CLOUD_RUN_SERVICE_VARIABLE
+                    + " definida) ni junto al perfil '" + DEPLOY_PROFILE + "'");
+        }
+    }
+
+    /**
+     * @param environment entorno de Spring
+     * @return {@code true} si existe {@code K_SERVICE} o está activo el perfil {@code prod}
+     */
+    private static boolean isDeployment(Environment environment) {
+        return environment.getProperty(CLOUD_RUN_SERVICE_VARIABLE) != null
+                || environment.matchesProfiles(DEPLOY_PROFILE);
     }
 
     /**
@@ -143,9 +206,8 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
         // REQ-09: se resuelve antes de bifurcar, para que exista en rutas públicas y protegidas
         String requestId = resolveRequestId(exchange);
         exposeRequestId(exchange, requestId);
-        String path = exchange.getRequest().getPath().value();
 
-        if (isPublicPath(path)) {
+        if (isPublicRoute(exchange.getRequest())) {
             return chain.filter(withoutIdentity(exchange, requestId));
         }
 
@@ -180,11 +242,17 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
     }
 
     /**
-     * @param path path de la solicitud, sin query string
-     * @return {@code true} si la ruta está en {@code PUBLIC_PATHS} y no exige token
+     * Decide si la solicitud es Caso B comparando método y ruta exactos (CM-14 REQ-REG-06).
+     *
+     * <p>La lista de desarrollo solo se consulta con el perfil {@code local} activo: sin él, esos
+     * health son Caso A como cualquier otra ruta (CM-14 REQ-REG-02).
+     *
+     * @param request solicitud entrante
+     * @return {@code true} si la solicitud coincide con una entrada pública y no exige token
      */
-    private boolean isPublicPath(String path) {
-        return PUBLIC_PATHS.contains(path);
+    private boolean isPublicRoute(ServerHttpRequest request) {
+        PublicRoute route = new PublicRoute(request.getMethod(), request.getPath().value());
+        return PUBLIC_ROUTES.contains(route) || (devRoutesEnabled && DEV_PUBLIC_ROUTES.contains(route));
     }
 
     /**
@@ -248,17 +316,20 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
      * Caso B: prepara la solicitud de una ruta pública. No hay usuario autenticado, así que no debe
      * quedar rastro de identidad (REQ-03, REQ-10).
      *
-     * <p>No retira el {@code Authorization} entrante: {@code /webhooks/wompi} se autentica con la
-     * firma del cuerpo. La decisión se revisa en el spec de OIDC (plan §3.3).
+     * <p>También retira el {@code Authorization} entrante (CM-14 REQ-REG-07): un ID Token que el
+     * navegador envíe por inercia no debe llegar al microservicio (AGENTS.md §7, bloqueante 4).
+     * {@code /webhooks/wompi} no lo necesita: se autentica con la firma del cuerpo.
      *
      * @param exchange  intercambio HTTP de la solicitud entrante
      * @param requestId identificador de trazabilidad ya resuelto
-     * @return un intercambio sin cabeceras {@code X-User-*} y con un único {@code X-Request-Id}
+     * @return un intercambio sin cabeceras {@code X-User-*} ni {@code Authorization}, y con un único
+     *         {@code X-Request-Id}
      */
     private ServerWebExchange withoutIdentity(ServerWebExchange exchange, String requestId) {
         ServerHttpRequest request = exchange.getRequest().mutate()
                 .headers(h -> {
                     IDENTITY_HEADERS.forEach(h::remove);
+                    h.remove(HttpHeaders.AUTHORIZATION);  // CM-14 REQ-REG-07
                     h.set(X_REQUEST_ID, requestId); // set y no header: header añadiría un segundo valor
                 })
                 .build();

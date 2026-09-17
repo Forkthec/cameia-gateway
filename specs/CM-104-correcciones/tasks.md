@@ -142,7 +142,7 @@ confirma que `GET /actuator/health` sigue respondiendo `200` sin token.
 
 - [x] T-42 · Revisar el diff completo con `git diff develop...HEAD` y confirmar: ningún secreto real, ninguna URL de downstream escrita en el código, y el total por debajo de las 1000 líneas que fija `AGENTS.md` — *nota del 14/09/2026: el `develop` local estaba desactualizado y mezclaba trabajo ya integrado en el PR #31, así que se revisó contra `origin/develop`. Sin secretos; sin URLs en `src/main/java`; las únicas URLs añadidas son `localhost` en el healthcheck y en pruebas. Tamaño: 18 archivos, +826/−237 (1063 si se suman las borradas; 342 son la reescritura de `docs/COMO-FUNCIONA.md`). `AGENTS.md` ya no fija el límite de 1000 líneas: queda a criterio de quien revise el PR*
 - [x] T-43 · Recorrer el DoD del spec §6 y marcar cada casilla con la evidencia real (salida de comando o número de prueba). Si algo no pasa, no se marca
-- [ ] T-44 · Abrir el PR hacia `develop` con el título `CM-104 | fix(gateway): endurecer identidad, errores y empaquetado [IA-ASISTIDO]`, y avisar en la descripción a los equipos de Cuentas y Entrevista de que ya reciben `X-User-Email`, `X-User-Roles` y `X-Request-Id` (`GW-TBD-07`)
+- [X] T-44 · Abrir el PR hacia `develop` con el título `CM-104 | fix(gateway): endurecer identidad, errores y empaquetado [IA-ASISTIDO]`, y avisar en la descripción a los equipos de Cuentas y Entrevista de que ya reciben `X-User-Email`, `X-User-Roles` y `X-Request-Id` (`GW-TBD-07`)
 
 ---
 

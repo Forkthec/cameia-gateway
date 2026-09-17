@@ -98,7 +98,7 @@ El modelo completo de seguridad, que es la razón de existir de este componente,
 
 ```text
 tech.cameia.gateway
-├── config          FirebaseConfig (bean de arranque)
+├── config          FirebaseConfig, OidcConfig (beans de arranque) y OidcRequiredInProd (guardia)
 ├── filter          GlobalFilter — auth de entrada, identidad y firma OIDC de salida
 └── exception       GlobalErrorHandler — formato JSON de errores HTTP
 ```
@@ -124,12 +124,17 @@ exception      independiente
 |---|---|---|
 | `GatewayApplication` | raíz | `@SpringBootApplication`, punto de entrada |
 | `FirebaseConfig` | `config` | Inicializa `FirebaseApp` en `@PostConstruct`; falla en arranque si las credenciales son inválidas (fail-fast) |
-| `FirebaseAuthGlobalFilter` | `filter` | Resuelve `X-Request-Id` y lo devuelve en la respuesta. Caso A: valida el Bearer token (`401` si falta, está vacío o Firebase lo rechaza), borra los `X-User-*` del cliente, emite `X-User-Id`, `X-User-Email`, `X-User-Roles` y `X-User-Plan` con `set` y elimina `Authorization`. Caso B: borra los `X-User-*` del cliente |
+| `FirebaseAuthGlobalFilter` | `filter` | Resuelve `X-Request-Id` y lo devuelve en la respuesta. Caso A: valida el Bearer token (`401` si falta, está vacío o Firebase lo rechaza), borra los `X-User-*` del cliente, emite `X-User-Id`, `X-User-Email`, `X-User-Roles` y `X-User-Plan` con `set` y elimina `Authorization`. Caso B, por método y ruta exactos (`PUBLIC_ROUTES`, y `DEV_PUBLIC_ROUTES` solo con el perfil `local`): borra los `X-User-*` y el `Authorization` del cliente. Falla el arranque si `local` está activo con `K_SERVICE` definida |
 | `GlobalErrorHandler` | `exception` | Formatea el error como `{"code":"...","message":"..."}` desde un catálogo cerrado (`AUTH_REQUIRED`, `NOT_FOUND`, `BAD_GATEWAY`, `SERVICE_UNAVAILABLE`, `GATEWAY_TIMEOUT`, `INTERNAL_ERROR`). Nunca copia el mensaje de la excepción: la registra en el log con su `X-Request-Id` |
+| `OidcConfig` | `config` | Con `gateway.oidc.signing-enabled=true` crea `GoogleIdTokenSource` y `OidcSigningGlobalFilter`; con `false` no crea ningún bean. La fuente real se apaga en pruebas con `gateway.oidc.google-credentials.enabled=false` |
+| `OidcRequiredInProd` | `config` | Con el perfil `prod`, falla el arranque si la firma OIDC está apagada |
+| `OidcTokenSource` | `filter` | Interfaz de una operación, `tokenFor(audience)`. Permite probar la firma con una fuente falsa |
+| `GoogleIdTokenSource` | `filter` | Pide el token a Google con `GoogleCredentials.getApplicationDefault()`. Cachea el objeto `IdTokenCredentials` por audience, nunca la cadena del token. Falla el arranque si las credenciales no son una service account |
+| `OidcSigningGlobalFilter` | `filter` | Orden `LOWEST_PRECEDENCE - 2`, antes del reenvío. Audience = `esquema://host[:puerto]` de la ruta, sin path, sin barra final y sin el puerto por defecto que `Route` agrega. Fija `Authorization` con `set`. Si no hay token responde `503` sin reenviar |
 
-> `GatewayProperties` se eliminó en CM-104-correcciones (REQ-14): nada la leía. La configuración tipada vuelve, si hace falta, con el spec de OIDC.
+> `GatewayProperties` se eliminó en CM-104-correcciones (REQ-14): nada la leía. La firma OIDC no la reintrodujo: le bastan `@ConditionalOnProperty` y `@Value`.
 
-**No se crea ninguna clase que no esté en esta tabla o en el spec aprobado de la HU.** El componente de firma OIDC de §6.3 todavía no existe: entra con su propia spec, no improvisado.
+**No se crea ninguna clase que no esté en esta tabla o en el spec aprobado de la HU.** El componente de firma OIDC de §6.3 existe desde `CM-104-correcciones-OIDC`.
 
 ---
 
@@ -143,6 +148,8 @@ exception      independiente
 | `/api/v1/voice-service/**` | `${CAMEIA_VOZ_URL}` | A | Declarado, Sprint 2 |
 | `/api/v1/audit/**` | `${CAMEIA_AUDITORIA_URL}` | A | Declarado, Sprint 2/3 |
 | `POST /webhooks/wompi` | `${CAMEIA_CUENTAS_URL}` | B | Declarado, operativo en Sprint 3 |
+| `POST /api/v1/users` (registro) | `${CAMEIA_CUENTAS_URL}` | B (decidido 15/09/2026, `GW-TBD-15`) | Activo en el Gateway (CM-14). Sin ruta YAML propia: la cubre `Path=/api/v1/users/**` |
+| `GET /api/v1/<prefijo>/health` (los cinco microservicios) | el de su prefijo | B **solo con el perfil `local`**; A en cualquier otro | Activo (CM-14). Solo versión 1 |
 | `/actuator/health` | el gateway mismo | — | Público, no se enruta |
 | `/actuator/info` | el gateway mismo | — | Público, no se enruta |
 
@@ -152,7 +159,14 @@ La ruta de cuentas es `/api/v1/users/**`, no `/api/v1/accounts/**`: el valor que
 
 Añadir una ruta nueva **no requiere código Java**, solo editar `application.yml` y abrir PR. Lo que sí requiere es declarar en la spec si es Caso A o Caso B.
 
-**Excepción: abrir una ruta al público sí exige recompilar.** Las rutas de Caso B viven en la constante `PUBLIC_PATHS` del filtro, no en el YAML. Una ruta nueva que no se añada ahí queda protegida por omisión: nunca se abre sola. La comparación es de texto exacto, sin comodines.
+**Excepción: abrir una ruta al público sí exige recompilar.** Las rutas de Caso B viven en la constante `PUBLIC_ROUTES` del filtro, no en el YAML: cualquier propiedad enlazada se puede sobrescribir con una variable de entorno. Una ruta nueva que no se añada ahí queda protegida por omisión: nunca se abre sola. La comparación es de **método y ruta exactos**, sin comodines: `GET /api/v1/users` es Caso A aunque `POST /api/v1/users` sea Caso B.
+
+**La lista de rutas públicas todavía no está definida.** A la fecha (15/09/2026) el equipo no tiene claro qué endpoints de la plataforma serán públicos: la lista se construye HU por HU, a medida que cada spec lo decida. Mientras eso ocurre:
+
+- Ninguna ruta se da por pública porque "parezca" pública (registro, health, webhooks). Si su spec no la declara Caso B, es Caso A.
+- Cada entrada nueva en `PUBLIC_ROUTES` sale de un spec aprobado y llega con su prueba. Una entrada sin spec se revierte, no se documenta a posteriori.
+- Las rutas candidatas se registran en el spec que las propone y en la tabla de arriba como "propuesto", no como activas.
+- Un endpoint público **solo para desarrollo** (por ejemplo, los health de cada microservicio) no es una ruta pública de la plataforma: se trata aparte y nunca puede quedar activo en despliegue. Vive en `DEV_PUBLIC_ROUTES`, que solo se consulta con el perfil `local` activo; si además existe `K_SERVICE` (Cloud Run), el Gateway no arranca (CM-14).
 
 ---
 
@@ -177,10 +191,10 @@ La llamada a `FirebaseAuth.verifyIdToken()` es bloqueante, así que se ejecuta e
 1. Omitir la validación del token de Firebase. Esa ruta no requiere inicio de sesión.
 2. Obtener igualmente el token OIDC del microservicio destino, por el mismo mecanismo de §6.3.
 3. Adjuntarlo como `Authorization: Bearer <token>` en la petición saliente.
-4. **Eliminar** cualquier header `X-User-*` que venga del cliente: no hay usuario autenticado y el downstream no debe creer que lo hay.
+4. **Eliminar** cualquier header `X-User-*` y el `Authorization` que vengan del cliente: no hay usuario autenticado y el downstream no debe creer que lo hay (CM-14 REQ-REG-07).
 5. Reenviar la petición.
 
-Hoy las rutas de Caso B viven en la constante `PUBLIC_PATHS` del filtro, y la única es `/webhooks/wompi`. Actuator no va en esa lista: lo atiende su propio `HandlerMapping` (orden `-100`) antes que las rutas del Gateway (orden `1`), así que el filtro nunca lo ve y todo endpoint de Actuator expuesto es público (`GW-TBD-11`).
+Hoy las rutas de Caso B viven en la constante `PUBLIC_ROUTES` del filtro, comparadas por método y ruta: `POST /webhooks/wompi` y `POST /api/v1/users`. Con el perfil `local` se suman los health v1 de `DEV_PUBLIC_ROUTES`. La lista no es definitiva: crece con cada spec que declare una ruta Caso B (§5). Actuator no va en esa lista: lo atiende su propio `HandlerMapping` (orden `-100`) antes que las rutas del Gateway (orden `1`), así que el filtro nunca lo ve y todo endpoint de Actuator expuesto es público (`GW-TBD-11`).
 
 > **La única diferencia entre el Caso A y el Caso B es si el gateway valida un token de Firebase en la entrada. El paso OIDC hacia el microservicio ocurre en ambos casos, sin excepciones.**
 
@@ -220,11 +234,9 @@ Los microservicios reciben solo lo necesario para su autorización de negocio, *
 
 ### 6.5 Estado actual frente a este modelo
 
-§6 describe el objetivo aprobado. `CM-104-correcciones` cerró el saneamiento de `X-User-*`, el contrato completo de §6.4, CORS, el `401` ante un Bearer vacío o malformado y la traducción de fallos del downstream a `502`/`503`/`504`. Queda **una brecha**. No afirmarla como implementada, y no cerrarla sin su spec y sus pruebas:
+§6 describe el objetivo aprobado. `CM-104-correcciones` cerró el saneamiento de `X-User-*`, el contrato completo de §6.4, CORS, el `401` ante un Bearer vacío o malformado y la traducción de fallos del downstream a `502`/`503`/`504`. `CM-104-correcciones-OIDC` cerró la última brecha de código: la firma OIDC saliente (16/09/2026, rama `CM-104-correcciones-OIDC`, PR pendiente).
 
-| Brecha | Dónde |
-|---|---|
-| El paso OIDC saliente no existe: ninguna petición hacia un microservicio lleva token de Google | falta el componente de §6.3 (`specs/CM-104-correcciones-OIDC/`) |
+**No está verificada en despliegue.** Desde `develop` (#37, #39) staging ya usa la service account dedicada `cameia-gateway-run` y URLs `*.run.app`. Falta del Bloque 0 de esa spec: confirmar `roles/run.invoker` en cada destino, URLs reales en producción, `SPRING_PROFILES_ACTIVE=prod` en los workflows (T-INF-05, decisión de DevOps) y la prueba de extremo a extremo. Hasta entonces no se afirma que funcione en Cloud Run.
 
 ---
 
@@ -271,7 +283,7 @@ Cómo ejecutar sin instalar Java ni Maven:
 docker compose run --rm verify
 ```
 
-Resultado esperado: `BUILD SUCCESS`. Hoy son 27 pruebas; el número sube a medida que se cubran las brechas de §6.5, y ninguna existente debe ponerse roja al hacerlo.
+Resultado esperado: `BUILD SUCCESS`. Hoy son 62 pruebas; el número sube a medida que se cubran las brechas de §6.5, y ninguna existente debe ponerse roja al hacerlo.
 
 ---
 
@@ -296,9 +308,10 @@ docker compose up --build -d              # arranca el gateway
 | Variable | Default |
 |---|---|
 | `SERVER_PORT` | `8080` |
+| `SPRING_PROFILES_ACTIVE` | **Sin default** (CM-14): `application.yml` no activa ningún perfil. `docker-compose.yml` y `.env` declaran `local`; quien arranque desde el IDE debe declararlo también |
 | `GATEWAY_CORS_ALLOWED_ORIGIN` | `http://localhost:5173` |
 | `GATEWAY_TIMEOUT_MS` | `30000` |
-| `GATEWAY_OIDC_ENABLED` | `false` en perfil `local`; en despliegue es `true` y no se puede apagar por entorno (§6.3) |
+| `GATEWAY_OIDC_ENABLED` | `false`. Solo alimenta `gateway.oidc.signing-enabled` en `application.yml`; con el perfil `prod` no tiene efecto, porque `application-prod.yml` fija `true` literal (§6.3) |
 | `CAMEIA_PERFIL_URL` | fijo en compose: `http://cameia-perfil-app:8082` |
 | `CAMEIA_CUENTAS_URL` | `http://cameia-cuentas-app:8081` |
 | `CAMEIA_ENTREVISTA_URL` | `http://cameia-entrevista-app:8083` |
@@ -328,16 +341,11 @@ El `[IA-ASISTIDO]` va **siempre al final**, nunca al inicio.
 
 ---
 
-## 12. Checklist antes de abrir PR
+## 12. Titulo y plantilla de commit
+```text
+CM-NNN | docs(scope): resultado [IA-ASISTIDO]
 
-- [ ] `docker compose run --rm verify` en verde (pegar salida en el PR)
-- [ ] Ningún secreto real en el diff
-- [ ] El ID Token de Firebase no sale hacia el downstream
-- [ ] Toda ruta nueva declara en su spec si es Caso A o Caso B (§6)
-- [ ] Las rutas salientes llevan token OIDC con el audience de la URL destino, o se explica por qué no aplica
-- [ ] Ningún `X-User-*` del cliente sobrevive hasta el downstream
-- [ ] `X-User-Plan` no se propaga vacío
-- [ ] Ninguna importación de `jakarta.persistence` ni JPA
-- [ ] `.env.example` actualizado si cambiaron variables
-- [ ] Bitácora del §10 con la fila correspondiente
-- [ ] Revisión pedida a alguien distinto de la autora
+Descripcion de un parrafo
+
+Comentario de modeol usado
+```

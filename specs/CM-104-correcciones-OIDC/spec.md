@@ -3,7 +3,7 @@
 - **HU asociada:** CM-104 (revisión) — brecha bloqueante detectada al escanear la base técnica
 - **Sprint:** 1
 - **Fecha:** 11/09/2026
-- **Estado:** propuesta pendiente de aprobación
+- **Estado:** propuesta aprobada para implementacion pero pendiente de despliegue
 - **Flujo SDD:** Fase 1 — Requisitos EARS
 - **Rama:** `CM-104-correcciones-OIDC` → `develop`
 - **Fuentes:**
@@ -74,8 +74,8 @@ ninguna ruta nueva, ninguna variable de audience.
 
 | Prerequisito | Estado | Por qué importa |
 |---|---|---|
-| `specs/CM-104-correcciones/` implementado y mergeado en `develop` | Pendiente | Este spec firma la petición **después** de que el filtro de identidad la haya saneado. Reutiliza `withIdentity` y `withoutIdentity`, y el archivo del perfil de despliegue se apoya en el `application-local.yml` que aquel spec crea |
-| Infraestructura de GCP (`GW-TBD-10` … `GW-TBD-13`) | **No configurada** | Bloquea el despliegue y la verificación de extremo a extremo, **no** la implementación ni la suite: el código se escribe y se prueba con el paso de firma apagado y una fuente de tokens simulada |
+| `specs/CM-104-correcciones/` implementado y mergeado en `develop` | Completado | Este spec firma la petición **después** de que el filtro de identidad la haya saneado. Reutiliza `withIdentity` y `withoutIdentity`, y el archivo del perfil de despliegue se apoya en el `application-local.yml` que aquel spec crea |
+| Infraestructura de GCP (`GW-TBD-24`, `GW-TBD-25`, `GW-TBD-12` y `GW-TBD-13`) | **No configurada** | Bloquea el despliegue y la verificación de extremo a extremo, **no** la implementación ni la suite: el código se escribe y se prueba con el paso de firma apagado y una fuente de tokens simulada |
 
 > **Consecuencia práctica:** los Bloques 1 a 7 de `tasks.md` se pueden completar hoy. El Bloque 0
 > queda esperando a que exista el proyecto de GCP.
@@ -293,17 +293,53 @@ Este spec agrega **una sola** variable. Las de CM-104 §4 siguen vigentes sin ca
 
 Continúa la serie de `specs/CM-104-correcciones/` §5, que llegó hasta `GW-TBD-09`.
 
+> **Renumeración del 15/09/2026:** este spec usó originalmente `GW-TBD-10` y `GW-TBD-11`, que
+> `specs/CM-104-correcciones/` también asignó el 14/09/2026 a otros temas. Para eliminar la colisión,
+> los de este spec pasan a `GW-TBD-24` (service account) y `GW-TBD-25` (`run.invoker`). Los de
+> correcciones conservan su número porque `AGENTS.md` y `docs/COMO-FUNCIONA.md` ya los citan. El
+> registro completo está en `specs/NUMERACIONES.md`.
+
 | ID | Tema | Impacto | Quién decide |
 |---|---|---|---|
-| `GW-TBD-10` | Nombre y proyecto de la service account con la que corre el Gateway en Cloud Run | Ninguno sobre el código: las credenciales por defecto la resuelven solas | Arquitectura / infraestructura |
-| `GW-TBD-11` | Quién concede `roles/run.invoker` de cada microservicio a esa identidad, y cuándo | Bloquea el despliegue, no la implementación | Arquitectura / infraestructura |
+| `GW-TBD-24` | Nombre y proyecto de la service account con la que corre el Gateway en Cloud Run | Ninguno sobre el código: las credenciales por defecto la resuelven solas | Arquitectura / infraestructura |
+| `GW-TBD-25` | Quién concede `roles/run.invoker` de cada microservicio a esa identidad, y cuándo | Bloquea el despliegue, no la implementación | Arquitectura / infraestructura |
 | `GW-TBD-12` | URL exacta de Cloud Run de cada microservicio y su forma canónica, con o sin barra final | El audience debe coincidir carácter a carácter | Infraestructura, al desplegar cada servicio |
 | `GW-TBD-13` | Qué audience se usa para un microservicio todavía no desplegado (voz, auditoría) | Hoy ninguno: esas rutas fallan igual por no tener servicio detrás | Arquitectura, en Sprint 2/3 |
 | `GW-TBD-14` | Confirmar con Cuentas que el webhook de Wompi se autentica por la firma del cuerpo y no por `Authorization`, que este spec reemplaza | Si Cuentas dependiera del `Authorization` entrante, habría que revisar `REQ-OIDC-03` | Cuentas |
 
-`GW-TBD-10` a `GW-TBD-13` **no bloquean la implementación**: ninguno cambia el código que aquí se
+`GW-TBD-24`, `GW-TBD-25`, `GW-TBD-12` y `GW-TBD-13` **no bloquean la implementación**: ninguno cambia el código que aquí se
 pide, y las pruebas no los necesitan. Sí bloquean el despliegue. `GW-TBD-14` se cierra preguntando,
 no escribiendo código.
+
+### 6.1 Respuesta de DevOps (11/09/2026)
+
+Fuente: `specs/CM-104-correcciones-OIDC/RESPUESTA-INFRA-OIDC.md`, de Paula Andrea Muñoz Delgado (DevOps), en respuesta a
+`SOLICITUD-INFRA-OIDC.md`. Seguimiento en Jira **CM-143**. Anotada en este spec el 15/09/2026.
+
+| ID | Respuesta | Estado |
+|---|---|---|
+| `GW-TBD-24` | **Una service account por servicio**, no compartida, en el proyecto `cameia-app`. Se crea al aprovisionar Cloud Run. Sin archivo de clave del lado de Backend | Respondido. Creación pendiente |
+| `GW-TBD-25` | La concede DevOps (Owner de `cameia-app`), con un binding **por servicio**, no global, en cuanto exista la service account del Gateway y cada microservicio esté desplegado | Respondido. Ejecución pendiente |
+| `GW-TBD-12` | Todavía no hay URLs reales. El audience de cada microservicio **será siempre su URL `*.run.app`**: ningún microservicio tendrá dominio propio. Solo el Gateway se publicará en `api.cameia.app` mediante Cloud Run Domain Mapping, y eso no afecta al audience | Parcial: faltan las URLs exactas |
+| `GW-TBD-13` | `cameia-voz` y `cameia-auditoria` no se despliegan en esta ventana. Sus rutas quedan como marcador; no hace falta resolver su variable ahora | ✅ Cerrado |
+| `GW-TBD-14` | Sin respuesta: la pregunta es para Cuentas, no para DevOps | Abierto |
+
+Todo lo anterior seguía bloqueado, según esa respuesta, por la facturación de GCP (posible restricción
+de la organización `unicauca.edu.co` sobre cuentas de facturación).
+
+**Consecuencia para el diseño:** la decisión de `GW-TBD-12` confirma `REQ-OIDC-02` tal como está. El
+audience sale de `CAMEIA_*_URL`, y esas variables deberán valer la URL `*.run.app` de cada servicio.
+
+### 6.2 Discrepancias detectadas el 15/09/2026 — se preguntan, no se corrigen
+
+| # | Discrepancia | Evidencia | A quién |
+|---|---|---|---|
+| 1 | La respuesta dice que Cloud Run no está aprovisionado, pero **tres días después** se mergearon workflows que despliegan el Gateway a Cloud Run. ¿Se resolvió la facturación? ¿La respuesta sigue vigente? | Respuesta del 11/09/2026 · `ae10f08` (staging, #27) y `d2d454f` (producción, #28), ambos del 14/09/2026 | DevOps |
+| 2 | ✅ **Resuelta 17/09/2026 en `develop` (#39, CM-163).** Staging y producción despliegan con la service account dedicada `cameia-gateway-run@<proyecto>.iam.gserviceaccount.com`. Según el comentario del workflow en `desplegar-servicio.yml` (#39), no verificado desde el Gateway, solo esa identidad tiene permiso de invocación sobre Perfil, Cuentas y Entrevista de staging | `.github/workflows/desplegar-servicio.yml:116`, `.github/workflows/despliegue-continuo.yml:112` | DevOps |
+| 3 | 🟡 **Resuelta solo en staging (#37, CM-156).** Staging usa `https://cameia-{perfil,cuentas,entrevista}-og25p6yagq-ue.a.run.app`, sin barra final: coinciden con el audience que construye `audienceOf`. **Producción** sigue con `http://cameia-perfil:8080` y `http://cameia-cuentas:8080`, y según el mismo workflow sus destinos todavía no existen | `.github/workflows/desplegar-servicio.yml:117`, `.github/workflows/despliegue-continuo.yml:113` | DevOps (T-INF-03) |
+| 4 | Publicar el Gateway con **Domain Mapping** puede no permitir Cloud Armor, que se configura sobre un balanceador. El rate limit del registro depende de eso | `specs/CM-14-Registro-usuario/spec.md` C-4 | DevOps |
+| 6 | **Nueva, 17/09/2026.** Ningún workflow define `SPRING_PROFILES_ACTIVE=prod`, así que en Cloud Run la firma OIDC queda **apagada** aunque el código exista. Activarla es decisión de DevOps: con `run.invoker` dado, staging debería aceptar las llamadas firmadas; sin él, todas responderían `403`. Ver T-INF-05 | `.github/workflows/desplegar-servicio.yml:117` (sin `SPRING_PROFILES_ACTIVE`) | DevOps (T-INF-05) |
+| 5 | ✅ **Resuelta 15/09/2026.** Colisión de IDs: `GW-TBD-10` y `GW-TBD-11` significaban otra cosa en `specs/CM-104-correcciones/spec.md`. Los de este spec se renumeraron a `GW-TBD-24` y `GW-TBD-25` | `specs/NUMERACIONES.md` | Juan Vela |
 
 ---
 
@@ -311,21 +347,21 @@ no escribiendo código.
 
 Implementación y pruebas, sin GCP:
 
-- [ ] `docker compose run --rm verify` en verde, sin credenciales de Google en el entorno
-- [ ] Con el paso de firma activo, una ruta de Caso A envía `Authorization` con el token OIDC y un solo valor (prueba de contrato)
-- [ ] Con el paso de firma activo, `POST /webhooks/wompi` también llega firmado (prueba de contrato)
-- [ ] Un cliente que envía su propio `Authorization` a una ruta pública no logra que ese valor llegue al microservicio (prueba de contrato)
-- [ ] El ID Token de Firebase no aparece nunca en el `Authorization` saliente (prueba de contrato)
-- [ ] El audience solicitado coincide con la `uri` de la ruta (prueba de contrato)
-- [ ] Fallo al obtener el token → `503`, sin detalle interno en el cuerpo, y el microservicio no recibe nada (prueba de contrato)
-- [ ] Con el paso de firma apagado, la solicitud sale sin `Authorization` y la validación de Firebase sigue funcionando (prueba de contrato)
-- [ ] El archivo del perfil de despliegue fija el paso de firma sin placeholder, y hay una prueba que lo demuestra
-- [ ] `.env.example` y `docker-compose.yml` documentan `GATEWAY_OIDC_ENABLED`
-- [ ] `AGENTS.md` §4 incluye las clases nuevas y §6.5 queda **sin ninguna fila pendiente**
-- [ ] `docs/COMO-FUNCIONA.md` §3 deja de decir que el paso OIDC no existe
-- [ ] Ningún secreto real en el diff del PR
-- [ ] Bitácora IA rellenada el mismo día
-- [ ] Título del PR: `CM-104 | feat(gateway): firmar las llamadas salientes con token OIDC [IA-ASISTIDO]`
+- [x] `docker compose run --rm verify` en verde, sin credenciales de Google en el entorno — `docker compose run --rm verify` 17/09/2026: `Tests run: 62, Failures: 0`, `BUILD SUCCESS`; `mvn clean compile test-compile -Xlint:all` sin advertencias
+- [x] Con el paso de firma activo, una ruta de Caso A envía `Authorization` con el token OIDC y un solo valor (prueba de contrato) — `OidcSigningFilterTest.caseA_downstreamReceivesSingleOidcToken`
+- [x] Con el paso de firma activo, `POST /webhooks/wompi` también llega firmado (prueba de contrato) — `wompiWebhook_withoutFirebaseToken_isSigned`
+- [x] Un cliente que envía su propio `Authorization` a una ruta pública no logra que ese valor llegue al microservicio (prueba de contrato) — `clientBasicAuthorization_isReplacedByOidcToken` y `OidcSigningGlobalFilterUnitTest.clientAuthorization_isReplacedNotAppended` (detecta `add` en lugar de `set`)
+- [x] El ID Token de Firebase no aparece nunca en el `Authorization` saliente (prueba de contrato) — `caseA_firebaseIdToken_neverReachesDownstream`
+- [x] El audience solicitado coincide con la `uri` de la ruta (prueba de contrato) — `audience_matchesRouteUriWithoutPathOrTrailingSlash`; con `https://*.run.app`, `OidcSigningGlobalFilterUnitTest` (sin `:443`)
+- [x] Fallo al obtener el token → `503`, sin detalle interno en el cuerpo, y el microservicio no recibe nada (prueba de contrato) — `tokenSourceFailure_returns503WithoutForwarding`; y un timeout del destino sigue en `504`: `downstreamTimeout_isStill504WithSigningEnabled`
+- [x] Con el paso de firma apagado, la solicitud sale sin `Authorization` y la validación de Firebase sigue funcionando (prueba de contrato) — `FirebaseAuthGlobalFilterTest` completa corre sin el flag; `oidcSigningFlagOff_noSigningFilterBean`
+- [x] El archivo del perfil de despliegue fija el paso de firma sin placeholder, y hay una prueba que lo demuestra — `VersionedYamlTest.prodYaml_declaresSigningEnabledAsLiteral`; `prodProfile_oidcVariableCannotDisableSigning`
+- [x] `.env.example` y `docker-compose.yml` documentan `GATEWAY_OIDC_ENABLED` — 16/09/2026
+- [x] `AGENTS.md` §4 incluye las clases nuevas y §6.5 queda **sin ninguna fila pendiente** — §6.5 sin tabla de brechas de código; lo que queda es de despliegue (Bloque 0) y está dicho explícitamente
+- [x] `docs/COMO-FUNCIONA.md` §3 deja de decir que el paso OIDC no existe — 16/09/2026
+- [x] Ningún secreto real en el diff del PR — revisado sobre `git diff origin/develop...HEAD` el 17/09/2026
+- [x] Bitácora IA rellenada el mismo día — `Entregables/16092026_BitacoraIA_Codigo_E2.md` y `17092026_BitacoraIA_Codigo_E2.md`
+- [ ] Título del PR: `CM-104 | feat(gateway): firmar las llamadas salientes con token OIDC [IA-ASISTIDO]` — *17/09/2026: no hay PR propio; viaja en el PR de CM-14 (`specs/CM-14-Registro-usuario/spec.md` §6)*
 
 Despliegue, cuando GCP exista (Bloque 0 de `tasks.md`):
 
