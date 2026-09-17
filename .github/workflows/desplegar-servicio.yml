@@ -70,14 +70,14 @@ jobs:
       - name: Publicar imagen en Artifact Registry
         run: docker push "${{ steps.imagen.outputs.imagen }}"
 
-      # CAMEIA_PERFIL_URL apunta a la URL real de Cloud Run del servicio de Perfil, ya
-      # verificada contra el servicio desplegado — un hostname de docker-compose no es
-      # alcanzable fuera de una red local. CAMEIA_CUENTAS_URL sigue sin valor real: ese
-      # servicio no tiene despliegue todavía.
+      # CAMEIA_PERFIL_URL, CAMEIA_CUENTAS_URL y CAMEIA_ENTREVISTA_URL apuntan a las URLs
+      # reales de Cloud Run de esos tres servicios, verificadas contra los servicios
+      # desplegados -- un hostname de docker-compose no es alcanzable fuera de una red
+      # local.
       # Nota: apuntar a la URL correcta no basta por sí solo para que la llamada
-      # funcione en la práctica -- el servicio destino puede seguir rechazando toda
-      # petición si no tiene ningún permiso de invocación otorgado, y si este gateway
-      # no firma ninguna credencial de identidad hacia el destino.
+      # funcione en la práctica -- los tres servicios destino tienen ingreso interno y
+      # rechazan toda petición que no traiga una credencial de identidad válida, y este
+      # gateway todavía no firma ninguna hacia sus llamadas salientes.
       # FIREBASE_PROJECT_ID es obligatorio: FirebaseConfig.java falla el arranque sin
       # él (fail-fast, REQ-06) — mismo proyecto que VITE_FIREBASE_PROJECT_ID en
       # cameia-web. Sin --allow-unauthenticated a propósito: el SA de despliegue no
@@ -93,7 +93,7 @@ jobs:
             --min-instances=${{ inputs.min_instances }} \
             --max-instances=2 \
             --service-account="25798898664-compute@developer.gserviceaccount.com" \
-            --set-env-vars="CAMEIA_PERFIL_URL=https://cameia-perfil-og25p6yagq-ue.a.run.app,CAMEIA_CUENTAS_URL=http://cameia-cuentas:8080,FIREBASE_PROJECT_ID=${{ vars.GCP_PROJECT_ID }}"
+            --set-env-vars="CAMEIA_PERFIL_URL=https://cameia-perfil-og25p6yagq-ue.a.run.app,CAMEIA_CUENTAS_URL=https://cameia-cuentas-og25p6yagq-ue.a.run.app,CAMEIA_ENTREVISTA_URL=https://cameia-entrevista-og25p6yagq-ue.a.run.app,FIREBASE_PROJECT_ID=${{ vars.GCP_PROJECT_ID }}"
 
       - name: URL del servicio desplegado
         run: gcloud run services describe "${{ inputs.servicio }}" --project="${{ vars.GCP_PROJECT_ID }}" --region="${{ env.REGION }}" --format="value(status.url)"
