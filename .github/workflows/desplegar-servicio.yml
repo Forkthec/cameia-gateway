@@ -20,6 +20,14 @@ on:
         required: false
         type: number
         default: 0
+      sha:
+        description: >-
+          SHA del commit a construir y desplegar. Obligatorio cuando quien invoca este
+          workflow se disparó por workflow_run: en ese caso GITHUB_SHA de este workflow
+          reutilizable apunta a la punta de la rama en el momento del evento, no al
+          commit que realmente disparó el evento.
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -40,6 +48,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha }}
 
       # Cuenta de servicio compartida entre gateway/perfil/cuentas, con permisos
       # mínimos y binding WIF condicionado a este repo (CM-156).
@@ -56,11 +66,13 @@ jobs:
       - name: Autenticar Docker contra Artifact Registry
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
-      # Tag corto (7 caracteres), convención de la guía DevOps del sprint.
+      # Tag corto (7 caracteres) calculado a partir del commit recibido como input, no
+      # de GITHUB_SHA -- este workflow puede invocarse desde un evento donde GITHUB_SHA
+      # no corresponde al commit que se quiere construir.
       - name: Calcular tag de imagen
         id: imagen
         run: |
-          SHA_CORTO="${GITHUB_SHA::7}"
+          SHA_CORTO=$(echo "${{ inputs.sha }}" | cut -c1-7)
           IMAGEN="${{ env.REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ env.AR_REPO }}/${{ env.IMAGEN_NOMBRE }}:${SHA_CORTO}"
           echo "imagen=${IMAGEN}" >> "$GITHUB_OUTPUT"
 
