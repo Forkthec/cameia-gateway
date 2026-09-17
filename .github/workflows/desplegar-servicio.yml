@@ -104,6 +104,12 @@ jobs:
       # Sin --allow-unauthenticated a propósito: el SA de despliegue no tiene (ni
       # necesita) permiso para tocar la política IAM del servicio — el acceso público
       # se otorga una sola vez, fuera de este pipeline.
+      # --ingress=internal-and-cloud-load-balancing: el servicio deja de aceptar
+      # tráfico directo desde internet -- solo se puede llegar a través del Load
+      # Balancer global que ya tiene Cloud Armor delante, o desde dentro de la misma
+      # red privada. La política de invocación (IAM) es una capa aparte y no cambia
+      # con esto: quien ya podía invocar el servicio antes de este cambio lo sigue
+      # pudiendo hacer, solo que ahora únicamente por ese camino de red permitido.
       - name: Desplegar a Cloud Run
         run: |
           gcloud run deploy "${{ inputs.servicio }}" \
@@ -113,6 +119,7 @@ jobs:
             --platform=managed \
             --min-instances=${{ inputs.min_instances }} \
             --max-instances=2 \
+            --ingress=internal-and-cloud-load-balancing \
             --service-account="cameia-gateway-run@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com" \
             --set-env-vars="CAMEIA_PERFIL_URL=https://cameia-perfil-og25p6yagq-ue.a.run.app,CAMEIA_CUENTAS_URL=https://cameia-cuentas-og25p6yagq-ue.a.run.app,CAMEIA_ENTREVISTA_URL=https://cameia-entrevista-og25p6yagq-ue.a.run.app,FIREBASE_PROJECT_ID=${{ vars.GCP_PROJECT_ID }}"
 
