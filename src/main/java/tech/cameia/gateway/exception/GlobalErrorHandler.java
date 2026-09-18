@@ -66,6 +66,14 @@ public class GlobalErrorHandler implements WebExceptionHandler {
     private static final ErrorBody DEFAULT_BODY = new ErrorBody("INTERNAL_ERROR", "Error interno del gateway");
 
     /**
+     * {@code MediaType.APPLICATION_JSON} no declara {@code charset} (la constante de Spring que sí
+     * lo hacía, {@code APPLICATION_JSON_UTF8}, se eliminó en Spring 5.2). ASVS 4.1.1 exige el
+     * parámetro {@code charset} explícito en cada respuesta con cuerpo.
+     */
+    private static final MediaType APPLICATION_JSON_UTF8 =
+            new MediaType("application", "json", StandardCharsets.UTF_8);
+
+    /**
      * Registra la excepción y responde con el estado y el cuerpo del catálogo.
      *
      * @param exchange intercambio HTTP en el que ocurrió el error
@@ -91,7 +99,7 @@ public class GlobalErrorHandler implements WebExceptionHandler {
                 .getBytes(StandardCharsets.UTF_8);
 
         response.setStatusCode(status);
-        response.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+        response.getHeaders().setContentType(APPLICATION_JSON_UTF8);
         return response.writeWith(Mono.just(response.bufferFactory().wrap(bytes)));
     }
 
