@@ -112,7 +112,7 @@ sequenceDiagram
     G->>F: verifyIdToken()
     F-->>G: uid + claims
     Note over G: Borra X-User-* del cliente y Authorization<br/>Emite la identidad del token
-    G->>P: GET /api/v1/profiles/me<br/>X-User-Id, X-User-Email, X-User-Roles,<br/>X-User-Plan, X-Request-Id<br/>(sin ninguna credencial)
+    G->>P: GET /api/v1/profiles/me<br/>X-User-Id, X-User-Email, X-User-Roles,<br/>X-User-Plan, X-User-Email-Verified, X-Request-Id<br/>(sin ninguna credencial)
     P-->>G: 200 perfil
     G-->>W: 200 perfil + X-Request-Id
 ```
@@ -164,7 +164,7 @@ el microservicio es idéntico en ambos. Son dos capas independientes:
 
 | Tipo de ruta | `Authorization` | Cabeceras de identidad | Trazabilidad |
 |---|---|---|---|
-| Privada (`/api/v1/**`) | El del cliente se **borra**; con la firma encendida lleva **solo** el token OIDC | Las del token: `X-User-Id` siempre; `X-User-Email`, `X-User-Roles` y `X-User-Plan` si el claim existe. Las del cliente se descartan | `X-Request-Id` |
+| Privada (`/api/v1/**`) | El del cliente se **borra**; con la firma encendida lleva **solo** el token OIDC | Las del token: `X-User-Id` siempre; `X-User-Email`, `X-User-Roles`, `X-User-Plan` y `X-User-Email-Verified` si el claim existe (`X-User-Email-Verified` también cuando vale `false`). Las del cliente se descartan | `X-Request-Id` |
 | Pública (`POST /webhooks/wompi`, `POST /api/v1/users`) | Igual que la privada | Ninguna: las `X-User-*` del cliente se borran | `X-Request-Id` |
 
 Hasta CM-14 la ruta pública reenviaba el `Authorization` del cliente. Con el registro abierto se borra: un ID

@@ -46,7 +46,7 @@ decisiones del Gateway están cerradas.
 
 ### Decisiones de otros equipos (no bloquean el Gateway)
 
-- [ ] T-00k · Definir la ruta exacta de verificación de correo, la única permitida con `email_verified=false` (`GW-TBD-17`). **Política ya decidida el 15/09/2026:** sin correo verificado no se puede hacer nada más. Queda para una sesión futura; al cerrarse entra como requisito nuevo del Gateway con su código de error
+- [x] T-00k · Definir la ruta exacta de verificación de correo, la única permitida con `email_verified=false` (`GW-TBD-17`) — *cerrada el 17/09/2026 por el contrato de cameia-cuentas: `POST /api/v1/users/me/verification`, Caso A. El Gateway la implementa en `specs/CM-14-verificacion-correo/`; sigue abierto si bloquea el resto de rutas*. **Política ya decidida el 15/09/2026:** sin correo verificado no se puede hacer nada más. Queda para una sesión futura; al cerrarse entra como requisito nuevo del Gateway con su código de error
 - [x] T-00l · Definir qué responde el registro ante un correo ya registrado: `409` con mensaje de usuario existente — Juan Vela, 15/09/2026 (`GW-TBD-21`, spec C-5)
 
 ### Avisos a enviar
@@ -105,7 +105,7 @@ decisiones del Gateway están cerradas.
 - [x] T-21 · Revisar `git diff develop...HEAD`: ningún secreto, ninguna lista pública en YAML, ningún comando presentado como ejecutado sin haberlo hecho — 16/09/2026: sin secretos (el único `password` es un valor falso de prueba), ninguna lista pública en YAML
 - [x] T-22 · Recorrer el DoD del spec §7 con evidencia real (salida de comando o nombre de prueba) — 17/09/2026: DoD del spec §7 marcado con evidencia; quedan sin marcar los avisos (T-00m a T-00q) y el título del PR hasta abrirlo
 - [x] T-23 · Rellenar la bitácora de IA del mismo día (`AGENTS.md` §10) — 16/09/2026: `Entregables/16092026_BitacoraIA_Codigo_E2.md`, pendiente de revisión humana
-- [ ] T-24 · Abrir el PR **solo con autorización expresa** (`AGENTS.md` §0, punto 1), con el título del spec §7 y el ID confirmado · *17/09/2026: autorizado por Juan Vela; incluye OIDC. Descripción lista en `Entregables/17092026_PR_CM-14-registro-usuario.md`. Se marca cuando el PR exista*
+- [X] T-24 · Abrir el PR **solo con autorización expresa** (`AGENTS.md` §0, punto 1), con el título del spec §7 y el ID confirmado · *17/09/2026: autorizado por Juan Vela; incluye OIDC. Descripción lista en `Entregables/17092026_PR_CM-14-registro-usuario.md`. Se marca cuando el PR exista*
 
 ---
 

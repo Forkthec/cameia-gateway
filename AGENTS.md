@@ -98,7 +98,7 @@ El modelo completo de seguridad, que es la razón de existir de este componente,
 
 ```text
 tech.cameia.gateway
-├── config          FirebaseConfig, OidcConfig (beans de arranque) y OidcRequiredInProd (guardia)
+├── config          FirebaseConfig, OidcConfig, OidcConfig (beanss de arranque) y OidcRequiredInProd (guardia) y OidcRequiredInProd (guardia)
 ├── filter          GlobalFilter — auth de entrada, identidad y firma OIDC de salida
 └── exception       GlobalErrorHandler — formato JSON de errores HTTP
 ```
@@ -124,7 +124,7 @@ exception      independiente
 |---|---|---|
 | `GatewayApplication` | raíz | `@SpringBootApplication`, punto de entrada |
 | `FirebaseConfig` | `config` | Inicializa `FirebaseApp` en `@PostConstruct`; falla en arranque si las credenciales son inválidas (fail-fast) |
-| `FirebaseAuthGlobalFilter` | `filter` | Resuelve `X-Request-Id` y lo devuelve en la respuesta. Caso A: valida el Bearer token (`401` si falta, está vacío o Firebase lo rechaza), borra los `X-User-*` del cliente, emite `X-User-Id`, `X-User-Email`, `X-User-Roles` y `X-User-Plan` con `set` y elimina `Authorization`. Caso B, por método y ruta exactos (`PUBLIC_ROUTES`, y `DEV_PUBLIC_ROUTES` solo con el perfil `local`): borra los `X-User-*` y el `Authorization` del cliente. Falla el arranque si `local` está activo con `K_SERVICE` definida |
+| `FirebaseAuthGlobalFilter` | `filter` | Resuelve `X-Request-Id` y lo devuelve en la respuesta. Caso A: valida el Bearer token (`401` si falta, está vacío o Firebase lo rechaza), borra los `X-User-*` del cliente, emite `X-User-Id`, `X-User-Email`, `X-User-Roles`, `X-User-Plan` y `X-User-Email-Verified` con `set` y elimina `Authorization`. Caso B, por método y ruta exactos (`PUBLIC_ROUTES`, y `DEV_PUBLIC_ROUTES` solo con el perfil `local`): borra los `X-User-*` y el `Authorization` del cliente. Falla el arranque si `local` está activo con `K_SERVICE` definida |
 | `GlobalErrorHandler` | `exception` | Formatea el error como `{"code":"...","message":"..."}` desde un catálogo cerrado (`AUTH_REQUIRED`, `NOT_FOUND`, `BAD_GATEWAY`, `SERVICE_UNAVAILABLE`, `GATEWAY_TIMEOUT`, `INTERNAL_ERROR`). Nunca copia el mensaje de la excepción: la registra en el log con su `X-Request-Id` |
 | `OidcConfig` | `config` | Con `gateway.oidc.signing-enabled=true` crea `GoogleIdTokenSource` y `OidcSigningGlobalFilter`; con `false` no crea ningún bean. La fuente real se apaga en pruebas con `gateway.oidc.google-credentials.enabled=false` |
 | `OidcRequiredInProd` | `config` | Con el perfil `prod`, falla el arranque si la firma OIDC está apagada |
@@ -133,7 +133,9 @@ exception      independiente
 | `OidcSigningGlobalFilter` | `filter` | Orden `LOWEST_PRECEDENCE - 2`, antes del reenvío. Audience = `esquema://host[:puerto]` de la ruta, sin path, sin barra final y sin el puerto por defecto que `Route` agrega. Fija `Authorization` con `set`. Si no hay token responde `503` sin reenviar |
 
 > `GatewayProperties` se eliminó en CM-104-correcciones (REQ-14): nada la leía. La firma OIDC no la reintrodujo: le bastan `@ConditionalOnProperty` y `@Value`.
+> `GatewayProperties` se eliminó en CM-104-correcciones (REQ-14): nada la leía. La firma OIDC no la reintrodujo: le bastan `@ConditionalOnProperty` y `@Value`.
 
+**No se crea ninguna clase que no esté en esta tabla o en el spec aprobado de la HU.** El componente de firma OIDC de §6.3 existe desde `CM-104-correcciones-OIDC`.
 **No se crea ninguna clase que no esté en esta tabla o en el spec aprobado de la HU.** El componente de firma OIDC de §6.3 existe desde `CM-104-correcciones-OIDC`.
 
 ---
@@ -149,6 +151,7 @@ exception      independiente
 | `/api/v1/audit/**` | `${CAMEIA_AUDITORIA_URL}` | A | Declarado, Sprint 2/3 |
 | `POST /webhooks/wompi` | `${CAMEIA_CUENTAS_URL}` | B | Declarado, operativo en Sprint 3 |
 | `POST /api/v1/users` (registro) | `${CAMEIA_CUENTAS_URL}` | B (decidido 15/09/2026, `GW-TBD-15`) | Activo en el Gateway (CM-14). Sin ruta YAML propia: la cubre `Path=/api/v1/users/**` |
+| `POST /api/v1/users/me/verification` (activación por correo verificado) | `${CAMEIA_CUENTAS_URL}` | A | Activo (CM-14-verificacion-correo). Sin ruta YAML propia. Es la única ruta que un usuario sin correo verificado debe poder usar (`GW-TBD-17`) |
 | `GET /api/v1/<prefijo>/health` (los cinco microservicios) | el de su prefijo | B **solo con el perfil `local`**; A en cualquier otro | Activo (CM-14). Solo versión 1 |
 | `/actuator/health` | el gateway mismo | — | Público, no se enruta |
 | `/actuator/info` | el gateway mismo | — | Público, no se enruta |
@@ -195,6 +198,7 @@ La llamada a `FirebaseAuth.verifyIdToken()` es bloqueante, así que se ejecuta e
 5. Reenviar la petición.
 
 Hoy las rutas de Caso B viven en la constante `PUBLIC_ROUTES` del filtro, comparadas por método y ruta: `POST /webhooks/wompi` y `POST /api/v1/users`. Con el perfil `local` se suman los health v1 de `DEV_PUBLIC_ROUTES`. La lista no es definitiva: crece con cada spec que declare una ruta Caso B (§5). Actuator no va en esa lista: lo atiende su propio `HandlerMapping` (orden `-100`) antes que las rutas del Gateway (orden `1`), así que el filtro nunca lo ve y todo endpoint de Actuator expuesto es público (`GW-TBD-11`).
+Hoy las rutas de Caso B viven en la constante `PUBLIC_ROUTES` del filtro, comparadas por método y ruta: `POST /webhooks/wompi` y `POST /api/v1/users`. Con el perfil `local` se suman los health v1 de `DEV_PUBLIC_ROUTES`. La lista no es definitiva: crece con cada spec que declare una ruta Caso B (§5). Actuator no va en esa lista: lo atiende su propio `HandlerMapping` (orden `-100`) antes que las rutas del Gateway (orden `1`), así que el filtro nunca lo ve y todo endpoint de Actuator expuesto es público (`GW-TBD-11`).
 
 > **La única diferencia entre el Caso A y el Caso B es si el gateway valida un token de Firebase en la entrada. El paso OIDC hacia el microservicio ocurre en ambos casos, sin excepciones.**
 
@@ -226,9 +230,12 @@ Los microservicios reciben solo lo necesario para su autorización de negocio, *
 | `X-User-Roles` | claim de roles, lista separada por comas | Sí, en Caso A |
 | `X-Request-Id` | lo genera el gateway si el cliente no lo envía | Sí, en toda ruta |
 | `X-User-Plan` | custom claim `plan` (`FREE` \| `PREMIUM`), lo escribe cameia-cuentas | Opcional: si el claim no existe, **el header se omite** |
+| `X-User-Email-Verified` | claim `email_verified` del token | Sí, en Caso A, **incluido cuando vale `false`**. Solo se omite si el claim no existe |
 
 - El gateway **reemplaza**, no agrega, cualquier `X-User-*` que llegue del cliente. Un cliente externo no puede inyectar identidad, y `mutate().header(...)` añade en lugar de reemplazar: hay que usar `set`.
 - La ausencia de `X-User-Plan` significa plan desconocido o sin suscripción activa. El gateway no inventa un plan por defecto.
+- `X-User-Email-Verified` se lee del mapa de claims, **no** de `FirebaseToken.isEmailVerified()`: ese método devuelve `false` cuando el claim no existe y convertiría una ausencia en una afirmación. Un `false` sí se propaga; la ausencia del header significa "no probado", y cameia-cuentas responde `403` (contrato de Cuentas del 17/09/2026).
+- El gateway **no bloquea** las rutas de Caso A cuando `email_verified` es `false`: esa regla sigue abierta en `GW-TBD-17`. Quien la implemente debe exceptuar `POST /api/v1/users/me/verification`, que es la ruta para salir de ese estado.
 - La lista `allowedHeaders` de CORS **no incluye** headers `X-User-*`: los emite el gateway, no el navegador. Admitirlos en CORS es invitar al cliente a mandar exactamente lo que solo el gateway debe firmar.
 - No se agregan campos derivados del JWT sin justificar su necesidad y documentar el contrato en una spec.
 
@@ -286,7 +293,7 @@ Cómo ejecutar sin instalar Java ni Maven:
 docker compose run --rm verify
 ```
 
-Resultado esperado: `BUILD SUCCESS`. Hoy son 62 pruebas; el número sube a medida que se cubran las brechas de §6.5, y ninguna existente debe ponerse roja al hacerlo.
+Resultado esperado: `BUILD SUCCESS`. Hoy son 70 pruebas; el número sube a medida que se cubran las brechas de §6.5, y ninguna existente debe ponerse roja al hacerlo.
 
 ---
 

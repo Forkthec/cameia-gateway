@@ -22,7 +22,7 @@
 
 ## 2. Clarificaciones `GW-TBD` — serie única para todo el repositorio
 
-**Siguiente número libre: `GW-TBD-26`.**
+**Siguiente número libre: `GW-TBD-27`.**
 
 El estado solo se anota donde el spec lo registra; en el resto, el spec es la fuente.
 
@@ -44,7 +44,7 @@ El estado solo se anota donde el spec lo registra; en el resto, el spec es la fu
 | `GW-TBD-14` | CM-104-correcciones-OIDC | Webhook de Wompi: firma del cuerpo frente a `Authorization` | Abierto |
 | `GW-TBD-15` | CM-14-Registro-usuario | Quién crea el usuario en Firebase | ✅ Cerrado |
 | `GW-TBD-16` | CM-14-Registro-usuario | Envío de correos de verificación y recuperación | ✅ Cerrado |
-| `GW-TBD-17` | CM-14-Registro-usuario | Qué puede hacer un usuario con `email_verified=false` | 🟡 Parcial: falta la ruta exacta |
+| `GW-TBD-17` | CM-14-Registro-usuario | Qué puede hacer un usuario con `email_verified=false` | 🟡 Parcial: ruta cerrada en CM-14-verificacion-correo (`POST /api/v1/users/me/verification`); falta si el Gateway bloquea el resto |
 | `GW-TBD-18` | CM-14-Registro-usuario | Protección del registro contra abuso | ✅ Cerrado para el Gateway · abierto para DevOps |
 | `GW-TBD-19` | CM-14-Registro-usuario | Perfil de desarrollo activo en despliegue | ✅ Cerrado |
 | `GW-TBD-20` | CM-14-Registro-usuario | Inventario de health v1 | ✅ Cerrado |
@@ -53,6 +53,7 @@ El estado solo se anota donde el spec lo registra; en el resto, el spec es la fu
 | `GW-TBD-23` | CM-14-Registro-usuario | Prefijo público o método + ruta exactos | ✅ Cerrado |
 | `GW-TBD-24` | CM-104-correcciones-OIDC | Service account del Gateway en Cloud Run *(antes `GW-TBD-10` en ese spec)* | Respondido. Creación pendiente |
 | `GW-TBD-25` | CM-104-correcciones-OIDC | Quién concede `roles/run.invoker` *(antes `GW-TBD-11` en ese spec)* | Respondido. Ejecución pendiente |
+| `GW-TBD-26` | CM-14-verificacion-correo | Propagar `email_verified` o rechazar con `403` en el Gateway | ✅ Cerrado: se propaga en `X-User-Email-Verified` |
 
 ---
 
@@ -80,5 +81,6 @@ El estado solo se anota donde el spec lo registra; en el resto, el spec es la fu
 | CM-113-integracion-perfil | `T-01` … `T-07` |
 | CM-104-correcciones-OIDC | `T-INF-01` … `T-INF-04`, `T-01` … `T-29` |
 | CM-14-Registro-usuario | `T-00a` … `T-00q`, `T-01` … `T-24` (`T-13` omitida) |
+| CM-14-verificacion-correo | `T-01` … `T-13` |
 
 > Los `T-NN` se repiten entre specs por diseño: se citan siempre junto al spec.

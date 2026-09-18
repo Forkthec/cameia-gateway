@@ -75,6 +75,12 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
     static final String X_USER_PLAN = "X-User-Plan";
 
     /**
+     * Estado de verificación del correo, del claim {@code email_verified}. Un {@code false} sí se
+     * propaga: es un dato, no una ausencia. Solo se omite si el claim no existe (CM-14 REQ-VER-03).
+     */
+    static final String X_USER_EMAIL_VERIFIED = "X-User-Email-Verified";
+
+    /**
      * Identificador de trazabilidad de la solicitud. Se conserva el del cliente o se genera uno.
      * Es trazabilidad, no identidad: por eso no pertenece a {@code IDENTITY_HEADERS}.
      */
@@ -86,6 +92,9 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
     /** Nombre del custom claim de Firebase con los roles del usuario. */
     static final String ROLES_CLAIM = "roles";
 
+    /** Nombre del claim estándar de Firebase con el estado de verificación del correo. */
+    static final String EMAIL_VERIFIED_CLAIM = "email_verified";
+
     /** Esquema de la cabecera {@code Authorization} que lleva el ID Token de Firebase, con su espacio. */
     private static final String BEARER_PREFIX = "Bearer ";
 
@@ -94,7 +103,7 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
      * nombres se descarta antes de reenviar, tanto en rutas protegidas como públicas (REQ-07, REQ-10).
      */
     private static final Set<String> IDENTITY_HEADERS = Set.of(
-            X_USER_ID, X_USER_EMAIL, X_USER_ROLES, X_USER_PLAN
+            X_USER_ID, X_USER_EMAIL, X_USER_ROLES, X_USER_PLAN, X_USER_EMAIL_VERIFIED
     );
 
     /** Perfil de desarrollo: el único que abre {@code DEV_PUBLIC_ROUTES} (CM-14 REQ-REG-01). */
@@ -357,6 +366,7 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
                     setIfPresent(h, X_USER_EMAIL, token.getEmail());
                     setIfPresent(h, X_USER_ROLES, readRoles(token));
                     setIfPresent(h, X_USER_PLAN, readPlan(token));
+                    setIfPresent(h, X_USER_EMAIL_VERIFIED, readEmailVerified(token));
                     h.set(X_REQUEST_ID, requestId);
                 })
                 .build();
@@ -372,6 +382,21 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
     private String readPlan(FirebaseToken token) {
         Object claim = token.getClaims().get(PLAN_CLAIM);
         return claim == null ? null : claim.toString();
+    }
+
+    /**
+     * Lee el claim {@code email_verified} sin interpretarlo (CM-14 REQ-VER-01 a REQ-VER-03).
+     *
+     * <p>Se lee del mapa de claims y no de {@code FirebaseToken.isEmailVerified()}: ese método
+     * devuelve {@code false} cuando el claim no existe, y convertiría una ausencia en una
+     * afirmación. Para cameia-cuentas no es lo mismo, aunque en los dos casos responda {@code 403}.
+     *
+     * @param token ID Token de Firebase ya verificado
+     * @return el valor del claim como texto, o {@code null} si el claim no existe
+     */
+    private String readEmailVerified(FirebaseToken token) {
+        Object claim = token.getClaims().get(EMAIL_VERIFIED_CLAIM);
+        return claim == null ? null : claim.toString(); // "false" también se propaga
     }
 
     /**
