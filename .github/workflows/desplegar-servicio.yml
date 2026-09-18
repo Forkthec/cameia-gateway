@@ -111,18 +111,11 @@ jobs:
       # con esto: quien ya podía invocar el servicio antes de este cambio lo sigue
       # pudiendo hacer, solo que ahora únicamente por ese camino de red permitido.
       #
-      # GATEWAY_CORS_ALLOWED_ORIGIN lleva los orígenes reales del frontend permitidos,
-      # separados por coma en un único valor -- application.yml los reparte solo (sin
-      # sintaxis de lista) porque Spring convierte un valor con comas en varios
-      # orígenes. Se fija aquí, en un archivo versionado que pasa por PR, en vez de
-      # dejar el valor por defecto (que solo sirve para desarrollo local): ampliar quién
-      # puede llamar al Gateway es una decisión de seguridad y debe quedar revisada, no
-      # ser un valor silencioso. Sin comodines: cada origen es el dominio real conocido,
-      # nunca un patrón que amplíe la superficie más de lo necesario.
-      # Como el valor de GATEWAY_CORS_ALLOWED_ORIGIN contiene comas, --set-env-vars usa
-      # el delimitador ^;^ en vez de la coma por defecto entre pares clave=valor -- si
-      # no, gcloud interpretaría cada origen adicional como una variable de entorno
-      # nueva en vez de parte del mismo valor.
+      # GATEWAY_CORS_ALLOWED_ORIGIN lleva los orígenes reales del frontend, separados por
+      # coma en un solo valor (application.yml los reparte). Va en este archivo versionado,
+      # no como default: agregar un origen nuevo debe pasar por PR.
+      # --set-env-vars usa el delimitador ^;^ porque ese valor con comas rompería el
+      # separador por defecto entre variables.
       - name: Desplegar a Cloud Run
         run: |
           gcloud run deploy "${{ inputs.servicio }}" \
