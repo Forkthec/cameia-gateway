@@ -309,7 +309,7 @@ docker compose up --build -d              # arranca el gateway
 |---|---|
 | `SERVER_PORT` | `8080` |
 | `SPRING_PROFILES_ACTIVE` | **Sin default** (CM-14): `application.yml` no activa ningún perfil. `docker-compose.yml` y `.env` declaran `local`; quien arranque desde el IDE debe declararlo también |
-| `GATEWAY_CORS_ALLOWED_ORIGIN` | `http://localhost:5173` |
+| `GATEWAY_CORS_ALLOWED_ORIGIN` | `http://localhost:5173`. Admite varias URLs separadas por coma. En despliegue se define en el workflow de CD, no aquí, para que cada origen nuevo pase por PR |
 | `GATEWAY_TIMEOUT_MS` | `30000` |
 | `GATEWAY_OIDC_ENABLED` | `false`. Solo alimenta `gateway.oidc.signing-enabled` en `application.yml`; con el perfil `prod` no tiene efecto, porque `application-prod.yml` fija `true` literal (§6.3) |
 | `CAMEIA_PERFIL_URL` | fijo en compose: `http://cameia-perfil-app:8082` |
