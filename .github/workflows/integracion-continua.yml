@@ -40,19 +40,22 @@ jobs:
           cache: maven
 
       # "mvn verify" compila, corre las pruebas (incluida ArchUnit, que valida la
-      # arquitectura del proyecto) y empaqueta — todo en un solo comando, sin desplegar
+      # arquitectura del proyecto), empaqueta y genera el reporte de cobertura de
+      # JaCoCo (ya configurado en pom.xml) — todo en un solo comando, sin desplegar
       # nada. Los tests del gateway usan mocks de Firebase y MockWebServer, no necesitan
       # red real ni una base de datos.
-      - name: Build + pruebas (mvn verify)
+      - name: Build + pruebas + cobertura (mvn verify)
         run: mvn -B -ntp verify
 
-      # Publica el reporte de pruebas como artefacto, aunque el paso anterior haya
-      # fallado — permite revisar qué se alcanzó a ejecutar sin repetir la corrida.
-      - name: Publicar reporte de pruebas
+      # Publica pruebas y reporte de cobertura como artefacto, aunque un paso anterior
+      # haya fallado — permite revisar qué se alcanzó a ejecutar sin repetir la corrida.
+      - name: Publicar reportes (pruebas + cobertura)
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: cameia-gateway-reporte-pruebas
-          path: target/surefire-reports/
+          name: cameia-gateway-reportes
+          path: |
+            target/surefire-reports/
+            target/site/jacoco/
           retention-days: 14
           if-no-files-found: warn

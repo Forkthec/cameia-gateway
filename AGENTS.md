@@ -98,7 +98,7 @@ El modelo completo de seguridad, que es la razón de existir de este componente,
 
 ```text
 tech.cameia.gateway
-├── config          FirebaseConfig, OidcConfig (beans de arranque) y OidcRequiredInProd (guardia)
+├── config          FirebaseConfig, OidcConfig, OidcConfig (beanss de arranque) y OidcRequiredInProd (guardia) y OidcRequiredInProd (guardia)
 ├── filter          GlobalFilter — auth de entrada, identidad y firma OIDC de salida
 └── exception       GlobalErrorHandler — formato JSON de errores HTTP
 ```
@@ -124,7 +124,7 @@ exception      independiente
 |---|---|---|
 | `GatewayApplication` | raíz | `@SpringBootApplication`, punto de entrada |
 | `FirebaseConfig` | `config` | Inicializa `FirebaseApp` en `@PostConstruct`; falla en arranque si las credenciales son inválidas (fail-fast) |
-| `FirebaseAuthGlobalFilter` | `filter` | Resuelve `X-Request-Id` y lo devuelve en la respuesta. Caso A: valida el Bearer token (`401` si falta, está vacío o Firebase lo rechaza), borra los `X-User-*` del cliente, emite `X-User-Id`, `X-User-Email`, `X-User-Roles`, `X-User-Plan` y `X-User-Email-Verified` con `set` y elimina `Authorization`. Caso B, por método y ruta exactos (`PUBLIC_ROUTES`, y `DEV_PUBLIC_ROUTES` solo con el perfil `local`): borra los `X-User-*` y el `Authorization` del cliente. Falla el arranque si `local` está activo con `K_SERVICE` definida |
+| `FirebaseAuthGlobalFilter` | `filter` | Resuelve `X-Request-Id` y lo devuelve en la respuesta. Caso A: valida el Bearer token (`401` si falta, está vacío o Firebase lo rechaza), borra los `X-User-*` del cliente, emite `X-User-Id`, `X-User-Email`, `X-User-Roles` y `X-User-Plan` con `set` y elimina `Authorization`. Caso B: borra los `X-User-*` del cliente |
 | `GlobalErrorHandler` | `exception` | Formatea el error como `{"code":"...","message":"..."}` desde un catálogo cerrado (`AUTH_REQUIRED`, `NOT_FOUND`, `BAD_GATEWAY`, `SERVICE_UNAVAILABLE`, `GATEWAY_TIMEOUT`, `INTERNAL_ERROR`). Nunca copia el mensaje de la excepción: la registra en el log con su `X-Request-Id` |
 | `OidcConfig` | `config` | Con `gateway.oidc.signing-enabled=true` crea `GoogleIdTokenSource` y `OidcSigningGlobalFilter`; con `false` no crea ningún bean. La fuente real se apaga en pruebas con `gateway.oidc.google-credentials.enabled=false` |
 | `OidcRequiredInProd` | `config` | Con el perfil `prod`, falla el arranque si la firma OIDC está apagada |
@@ -133,7 +133,9 @@ exception      independiente
 | `OidcSigningGlobalFilter` | `filter` | Orden `LOWEST_PRECEDENCE - 2`, antes del reenvío. Audience = `esquema://host[:puerto]` de la ruta, sin path, sin barra final y sin el puerto por defecto que `Route` agrega. Fija `Authorization` con `set`. Si no hay token responde `503` sin reenviar |
 
 > `GatewayProperties` se eliminó en CM-104-correcciones (REQ-14): nada la leía. La firma OIDC no la reintrodujo: le bastan `@ConditionalOnProperty` y `@Value`.
+> `GatewayProperties` se eliminó en CM-104-correcciones (REQ-14): nada la leía. La firma OIDC no la reintrodujo: le bastan `@ConditionalOnProperty` y `@Value`.
 
+**No se crea ninguna clase que no esté en esta tabla o en el spec aprobado de la HU.** El componente de firma OIDC de §6.3 existe desde `CM-104-correcciones-OIDC`.
 **No se crea ninguna clase que no esté en esta tabla o en el spec aprobado de la HU.** El componente de firma OIDC de §6.3 existe desde `CM-104-correcciones-OIDC`.
 
 ---
@@ -196,6 +198,7 @@ La llamada a `FirebaseAuth.verifyIdToken()` es bloqueante, así que se ejecuta e
 5. Reenviar la petición.
 
 Hoy las rutas de Caso B viven en la constante `PUBLIC_ROUTES` del filtro, comparadas por método y ruta: `POST /webhooks/wompi` y `POST /api/v1/users`. Con el perfil `local` se suman los health v1 de `DEV_PUBLIC_ROUTES`. La lista no es definitiva: crece con cada spec que declare una ruta Caso B (§5). Actuator no va en esa lista: lo atiende su propio `HandlerMapping` (orden `-100`) antes que las rutas del Gateway (orden `1`), así que el filtro nunca lo ve y todo endpoint de Actuator expuesto es público (`GW-TBD-11`).
+Hoy las rutas de Caso B viven en la constante `PUBLIC_ROUTES` del filtro, comparadas por método y ruta: `POST /webhooks/wompi` y `POST /api/v1/users`. Con el perfil `local` se suman los health v1 de `DEV_PUBLIC_ROUTES`. La lista no es definitiva: crece con cada spec que declare una ruta Caso B (§5). Actuator no va en esa lista: lo atiende su propio `HandlerMapping` (orden `-100`) antes que las rutas del Gateway (orden `1`), así que el filtro nunca lo ve y todo endpoint de Actuator expuesto es público (`GW-TBD-11`).
 
 > **La única diferencia entre el Caso A y el Caso B es si el gateway valida un token de Firebase en la entrada. El paso OIDC hacia el microservicio ocurre en ambos casos, sin excepciones.**
 
@@ -240,7 +243,7 @@ Los microservicios reciben solo lo necesario para su autorización de negocio, *
 
 §6 describe el objetivo aprobado. `CM-104-correcciones` cerró el saneamiento de `X-User-*`, el contrato completo de §6.4, CORS, el `401` ante un Bearer vacío o malformado y la traducción de fallos del downstream a `502`/`503`/`504`. `CM-104-correcciones-OIDC` cerró la última brecha de código: la firma OIDC saliente (16/09/2026, rama `CM-104-correcciones-OIDC`, PR pendiente).
 
-**No está verificada en despliegue.** Desde `develop` (#37, #39) staging ya usa la service account dedicada `cameia-gateway-run` y URLs `*.run.app`. Falta del Bloque 0 de esa spec: confirmar `roles/run.invoker` en cada destino, URLs reales en producción, `SPRING_PROFILES_ACTIVE=prod` en los workflows (T-INF-05, decisión de DevOps) y la prueba de extremo a extremo. Hasta entonces no se afirma que funcione en Cloud Run.
+**Parcialmente verificada en staging, no en producción.** Desde `develop` (#37, #39) staging ya usa la service account dedicada `cameia-gateway-run` y URLs `*.run.app`. Del Bloque 0 de esa spec, verificado el 18-sep-2026 (CM-175): `roles/run.invoker` confirmado en los tres destinos (`gcloud run services get-iam-policy` sobre `cameia-perfil`, `cameia-cuentas` y `cameia-entrevista`, los tres con el binding a `cameia-gateway-run`), y `SPRING_PROFILES_ACTIVE=prod` agregado al despliegue de staging (`desplegar-servicio.yml`) — antes de ese fix, el perfil de despliegue nunca se activaba y la firma OIDC quedaba apagada en la práctica, aunque el código de CM-104-correcciones-OIDC ya existiera. **Sigue faltando:** URLs reales en producción (el job de producción de `despliegue-continuo.yml` aún no tiene `SPRING_PROFILES_ACTIVE=prod` ni las URLs corregidas, fuera de alcance de CM-175) y la prueba de extremo a extremo real (una llamada autenticada completa Gateway→Perfil; el smoke test agregado en CM-175 verifica que el Gateway responde, no ese salto interno). Hasta entonces no se afirma que la firma OIDC funcione correctamente en producción.
 
 ---
 
@@ -264,6 +267,9 @@ Los microservicios reciben solo lo necesario para su autorización de negocio, *
 7. Un header `X-User-*` que llegue del cliente y sobreviva hasta el downstream.
 8. `X-User-Plan` propagado vacío o nulo.
 9. Secreto real (`private_key`, token, contraseña) en cualquier archivo versionado.
+
+Antes de abrir un PR que toque autenticación, autorización o datos de otro usuario: revisar
+`cameia-infra/docs/seguridad/matriz-asvs-nivel1.md` (DoD §Condicionales).
 
 ---
 
@@ -313,7 +319,7 @@ docker compose up --build -d              # arranca el gateway
 |---|---|
 | `SERVER_PORT` | `8080` |
 | `SPRING_PROFILES_ACTIVE` | **Sin default** (CM-14): `application.yml` no activa ningún perfil. `docker-compose.yml` y `.env` declaran `local`; quien arranque desde el IDE debe declararlo también |
-| `GATEWAY_CORS_ALLOWED_ORIGIN` | `http://localhost:5173` |
+| `GATEWAY_CORS_ALLOWED_ORIGIN` | `http://localhost:5173`. Admite varias URLs separadas por coma. En despliegue se define en el workflow de CD, no aquí, para que cada origen nuevo pase por PR |
 | `GATEWAY_TIMEOUT_MS` | `30000` |
 | `GATEWAY_OIDC_ENABLED` | `false`. Solo alimenta `gateway.oidc.signing-enabled` en `application.yml`; con el perfil `prod` no tiene efecto, porque `application-prod.yml` fija `true` literal (§6.3) |
 | `CAMEIA_PERFIL_URL` | fijo en compose: `http://cameia-perfil-app:8082` |

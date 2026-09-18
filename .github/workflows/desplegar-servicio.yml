@@ -104,6 +104,32 @@ jobs:
       # Sin --allow-unauthenticated a propósito: el SA de despliegue no tiene (ni
       # necesita) permiso para tocar la política IAM del servicio — el acceso público
       # se otorga una sola vez, fuera de este pipeline.
+      # --ingress=internal-and-cloud-load-balancing: el servicio deja de aceptar
+      # tráfico directo desde internet -- solo se puede llegar a través del Load
+      # Balancer global que ya tiene Cloud Armor delante, o desde dentro de la misma
+      # red privada. La política de invocación (IAM) es una capa aparte y no cambia
+      # con esto: quien ya podía invocar el servicio antes de este cambio lo sigue
+      # pudiendo hacer, solo que ahora únicamente por ese camino de red permitido.
+      #
+      # GATEWAY_CORS_ALLOWED_ORIGIN lleva los orígenes reales del frontend, separados por
+      # coma en un solo valor (application.yml los reparte). Va en este archivo versionado,
+      # no como default: agregar un origen nuevo debe pasar por PR.
+      # --set-env-vars usa el delimitador ^;^ porque ese valor con comas rompería el
+      # separador por defecto entre variables.
+      #
+      # SPRING_PROFILES_ACTIVE=prod (CM-175, hallazgo real del 18-sep-2026): sin esta
+      # variable, application.yml deja spring.profiles.active vacío (linea 7, a proposito
+      # — CM-14 REQ-REG-02) y application-prod.yml (el "perfil de despliegue" de AGENTS.md
+      # §6.3) nunca se carga. Sin ese perfil, gateway.oidc.signing-enabled cae en su
+      # default de application.yml (${GATEWAY_OIDC_ENABLED:false}, tambien sin definir
+      # aqui) y la firma OIDC saliente queda apagada. Verificado en vivo antes de este fix:
+      # `gcloud run services describe cameia-gateway` no listaba SPRING_PROFILES_ACTIVE ni
+      # GATEWAY_OIDC_ENABLED, y cameia-perfil exige `roles/run.invoker` (revisado con
+      # `gcloud run services get-iam-policy cameia-perfil`) — toda llamada real Gateway→
+      # Perfil habria fallado por falta de token OIDC, aunque el codigo de la firma (CM-104-
+      # correcciones-OIDC) ya existiera. El nombre "prod" es el del perfil de Spring, no del
+      # ambiente de GCP: aplica igual en staging, que aqui es "produccion" en el sentido de
+      # "no es un desarrollador local" (AGENTS.md §6.3, "Perfil de despliegue").
       - name: Desplegar a Cloud Run
         run: |
           gcloud run deploy "${{ inputs.servicio }}" \
@@ -113,8 +139,48 @@ jobs:
             --platform=managed \
             --min-instances=${{ inputs.min_instances }} \
             --max-instances=2 \
+            --ingress=internal-and-cloud-load-balancing \
             --service-account="cameia-gateway-run@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com" \
-            --set-env-vars="CAMEIA_PERFIL_URL=https://cameia-perfil-og25p6yagq-ue.a.run.app,CAMEIA_CUENTAS_URL=https://cameia-cuentas-og25p6yagq-ue.a.run.app,CAMEIA_ENTREVISTA_URL=https://cameia-entrevista-og25p6yagq-ue.a.run.app,FIREBASE_PROJECT_ID=${{ vars.GCP_PROJECT_ID }}"
+            --set-env-vars="^;^SPRING_PROFILES_ACTIVE=prod;CAMEIA_PERFIL_URL=https://cameia-perfil-og25p6yagq-ue.a.run.app;CAMEIA_CUENTAS_URL=https://cameia-cuentas-og25p6yagq-ue.a.run.app;CAMEIA_ENTREVISTA_URL=https://cameia-entrevista-og25p6yagq-ue.a.run.app;FIREBASE_PROJECT_ID=${{ vars.GCP_PROJECT_ID }};GATEWAY_CORS_ALLOWED_ORIGIN=https://cameia.app,https://cameia-e245f.web.app,https://cameia-e245f.firebaseapp.com,https://cameia-e245f--staging-gwyx3iui.web.app"
 
       - name: URL del servicio desplegado
-        run: gcloud run services describe "${{ inputs.servicio }}" --project="${{ vars.GCP_PROJECT_ID }}" --region="${{ env.REGION }}" --format="value(status.url)"
+        id: url
+        run: |
+          URL=$(gcloud run services describe "${{ inputs.servicio }}" --project="${{ vars.GCP_PROJECT_ID }}" --region="${{ env.REGION }}" --format="value(status.url)")
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+          echo "$URL"
+
+      # Smoke test (Anexo_Restricciones_Atributos_Calidad.pdf DPL-02: la promocion de un
+      # digest exige "SHA, digest, aprobacion, smoke test y rollback" como evidencia
+      # minima — no bastaba con que `gcloud run deploy` retorne sin error, porque eso solo
+      # confirma que el contenedor arranco, no que responde bien a una peticion real (asi
+      # paso con el hallazgo de SPRING_PROFILES_ACTIVE de arriba: el contenedor arrancaba
+      # normal con la firma OIDC apagada).
+      #
+      # Por que via el dominio publico y no la URL cruda de Cloud Run: el servicio usa
+      # --ingress=internal-and-cloud-load-balancing (linea de arriba), que rechaza tanto la
+      # llamada directa desde este runner de GitHub Actions como el tunel autenticado de
+      # `gcloud run services proxy` (probado en vivo el 18-sep-2026 contra staging: ambos
+      # dan 404/403 de la infraestructura de Google, sin llegar nunca al contenedor). El
+      # dominio publico (Load Balancer + Cloud Armor, DPL-05) SI es un camino de red
+      # permitido por ese mismo ingress, y /actuator/health no pasa por las rutas del
+      # Gateway (AGENTS.md §5: "Publico, no se enruta") asi que no necesita token de
+      # Firebase. Solo se ejecuta para staging: producción todavía no tiene dominio propio
+      # (ver ESTADO.md, "corregir el job de producción del Gateway") y desplegar-servicio.yml
+      # hoy solo se invoca para staging.
+      - name: Smoke test — /actuator/health a través del dominio público (solo staging)
+        if: inputs.ambiente == 'staging'
+        run: |
+          for intento in 1 2 3 4 5; do
+            CODIGO=$(curl -s -o /tmp/health.json -w "%{http_code}" "${{ vars.STAGING_API_URL }}/actuator/health" || echo "000")
+            if [ "$CODIGO" = "200" ]; then
+              echo "Smoke test PASA: /actuator/health respondió 200 en el intento $intento."
+              cat /tmp/health.json
+              exit 0
+            fi
+            echo "Intento $intento: /actuator/health respondió $CODIGO, reintentando en 5s (la revision nueva puede tardar en recibir tráfico)."
+            sleep 5
+          done
+          echo "::error::Smoke test FALLA: /actuator/health no respondió 200 tras el despliegue (última respuesta: $CODIGO)."
+          cat /tmp/health.json
+          exit 1

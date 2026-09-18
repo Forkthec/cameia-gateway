@@ -68,8 +68,9 @@ spring:
           globalcors:
             cors-configurations:
               '[/**]':
-                allowedOrigins:
-                  - ${GATEWAY_CORS_ALLOWED_ORIGIN:http://localhost:5173}
+                # Sin guion de lista a propósito: Spring convierte un valor separado por comas en
+                # varios orígenes. Con un solo valor (el default de aquí) se comporta igual que antes.
+                allowedOrigins: ${GATEWAY_CORS_ALLOWED_ORIGIN:http://localhost:5173}
                 allowedMethods:
                   - GET
                   - POST
