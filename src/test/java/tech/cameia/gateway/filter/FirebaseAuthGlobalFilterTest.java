@@ -24,6 +24,7 @@ import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -585,6 +586,171 @@ class FirebaseAuthGlobalFilterTest {
 
         assertThat(result.getStatus().value()).isEqualTo(status);
         assertThat(new String(result.getResponseBody(), StandardCharsets.UTF_8)).isEqualTo(body);
+    }
+
+    // ── CM-14 verificación de correo: el estado llega a Cuentas (REQ-VER-01 a 03) ──
+
+    /**
+     * CM-14 REQ-VER-01 y REQ-VER-02: el claim `email_verified` se propaga tal cual, y un `false`
+     * también se envía: para cameia-cuentas no es lo mismo que no saberlo.
+     *
+     * @param claimValue valor del claim en el token
+     */
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void emailVerifiedClaim_isPropagatedToDownstream(boolean claimValue) throws Exception {
+        FirebaseToken token = mockToken("uid-verificacion", Map.of("email_verified", claimValue));
+        when(firebaseAuth.verifyIdToken("token-" + claimValue)).thenReturn(token);
+
+        mockDownstream.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
+
+        webTestClient.post()
+                .uri("/api/v1/users/me/verification")
+                .header("Authorization", "Bearer token-" + claimValue)
+                .exchange()
+                .expectStatus().isOk();
+
+        RecordedRequest req = mockDownstream.takeRequest(5, TimeUnit.SECONDS);
+        assertThat(req).isNotNull();
+        assertThat(req.getHeader("X-User-Email-Verified")).isEqualTo(String.valueOf(claimValue));
+    }
+
+    /**
+     * CM-14 REQ-VER-03: sin el claim la cabecera no se envía. No se usa
+     * {@code FirebaseToken.isEmailVerified()}, que convertiría la ausencia en un `false`.
+     */
+    @Test
+    void tokenWithoutEmailVerifiedClaim_omitsHeader() throws Exception {
+        FirebaseToken token = mockToken("uid-sin-claim", Map.of());
+        when(firebaseAuth.verifyIdToken("token-sin-claim-verificacion")).thenReturn(token);
+
+        mockDownstream.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
+
+        webTestClient.get()
+                .uri("/api/v1/profiles/me")
+                .header("Authorization", "Bearer token-sin-claim-verificacion")
+                .exchange()
+                .expectStatus().isOk();
+
+        RecordedRequest req = mockDownstream.takeRequest(5, TimeUnit.SECONDS);
+        assertThat(req).isNotNull();
+        assertThat(req.getHeader("X-User-Email-Verified")).isNull();
+    }
+
+    /**
+     * CM-14 REQ-VER-04: un cliente que se declara verificado no lo consigue. El token manda, y el
+     * destino recibe un único valor: sin esto, cualquiera activaría su cuenta con una cabecera.
+     */
+    @Test
+    void clientEmailVerifiedHeader_isReplacedByTokenClaim() throws Exception {
+        FirebaseToken token = mockToken("uid-suplanta-verificacion", Map.of("email_verified", false));
+        when(firebaseAuth.verifyIdToken("token-suplanta-verificacion")).thenReturn(token);
+
+        mockDownstream.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
+
+        webTestClient.post()
+                .uri("/api/v1/users/me/verification")
+                .header("Authorization", "Bearer token-suplanta-verificacion")
+                .header("X-User-Email-Verified", "true")
+                .exchange()
+                .expectStatus().isOk();
+
+        RecordedRequest req = mockDownstream.takeRequest(5, TimeUnit.SECONDS);
+        assertThat(req).isNotNull();
+        assertThat(req.getHeaders().values("X-User-Email-Verified")).containsExactly("false");
+    }
+
+    /**
+     * CM-14 REQ-VER-04, Caso B: en una ruta pública no hay usuario autenticado, así que la cabecera
+     * del cliente se borra sin reemplazo.
+     */
+    @Test
+    void publicRoute_dropsClientEmailVerifiedHeader() throws Exception {
+        mockDownstream.enqueue(new MockResponse().setResponseCode(201).setBody("{}"));
+
+        webTestClient.post()
+                .uri("/api/v1/users")
+                .header("X-User-Email-Verified", "true")
+                .header("Content-Type", "application/json")
+                .bodyValue("{}")
+                .exchange()
+                .expectStatus().isCreated();
+
+        RecordedRequest req = mockDownstream.takeRequest(5, TimeUnit.SECONDS);
+        assertThat(req).isNotNull();
+        assertThat(req.getHeader("X-User-Email-Verified")).isNull();
+    }
+
+    /**
+     * CM-14 REQ-VER-05: la ruta de verificación es Caso A. Sin token no llega a Cuentas, y con token
+     * válido llega con el contrato de cabeceras de {@code AGENTS.md} §6.4.
+     */
+    @Test
+    void verificationRoute_withoutToken_returns401() {
+        int requestsBefore = mockDownstream.getRequestCount();
+
+        webTestClient.post()
+                .uri("/api/v1/users/me/verification")
+                .exchange()
+                .expectStatus().isUnauthorized()
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("AUTH_REQUIRED");
+
+        assertThat(mockDownstream.getRequestCount()).isEqualTo(requestsBefore);
+    }
+
+    /**
+     * CM-14 REQ-VER-05: con token válido, cameia-cuentas recibe la ruta completa y el contrato de
+     * §6.4. El cuerpo va vacío: la identidad y el estado salen del token.
+     */
+    @Test
+    void verificationRoute_withValidToken_reachesAccountsWithIdentityContract() throws Exception {
+        FirebaseToken token = mockToken("uid-activa", Map.of("email_verified", true, "roles", List.of("free")));
+        when(token.getEmail()).thenReturn("ana@cameia.tech");
+        when(firebaseAuth.verifyIdToken("token-activa")).thenReturn(token);
+
+        mockDownstream.enqueue(new MockResponse().setResponseCode(204));
+
+        webTestClient.post()
+                .uri("/api/v1/users/me/verification")
+                .header("Authorization", "Bearer token-activa")
+                .exchange()
+                .expectStatus().isNoContent();
+
+        RecordedRequest req = mockDownstream.takeRequest(5, TimeUnit.SECONDS);
+        assertThat(req).isNotNull();
+        assertThat(req.getPath()).isEqualTo("/api/v1/users/me/verification");
+        assertThat(req.getHeader("X-User-Id")).isEqualTo("uid-activa");
+        assertThat(req.getHeader("X-User-Email")).isEqualTo("ana@cameia.tech");
+        assertThat(req.getHeader("X-User-Roles")).isEqualTo("free");
+        assertThat(req.getHeader("X-User-Email-Verified")).isEqualTo("true");
+        assertThat(req.getHeader("X-Request-Id")).isNotBlank();
+        assertThat(req.getHeader("Authorization")).isNullOrEmpty();
+    }
+
+    /**
+     * CM-14 REQ-VER-06: cameia-cuentas responde los errores con `application/problem+json`
+     * (RFC 7807). El Gateway no reescribe el cuerpo ni el tipo de contenido.
+     */
+    @Test
+    void downstreamProblemJson_isReturnedUnchanged() throws Exception {
+        String body = "{\"type\":\"about:blank\",\"title\":\"Correo no verificado\",\"status\":403}";
+        mockDownstream.enqueue(new MockResponse().setResponseCode(403)
+                .setHeader("Content-Type", "application/problem+json").setBody(body));
+
+        EntityExchangeResult<byte[]> result = webTestClient.post()
+                .uri("/api/v1/users")
+                .header("Content-Type", "application/json")
+                .bodyValue("{}")
+                .exchange()
+                .expectBody().returnResult();
+
+        mockDownstream.takeRequest(5, TimeUnit.SECONDS);
+
+        assertThat(result.getStatus().value()).isEqualTo(403);
+        assertThat(new String(result.getResponseBody(), StandardCharsets.UTF_8)).isEqualTo(body);
+        assertThat(result.getResponseHeaders().getContentType())
+                .isEqualTo(MediaType.APPLICATION_PROBLEM_JSON);
     }
 
     // ── OIDC prueba 7: con el flag apagado no hay firma (REQ-OIDC-07, REQ-OIDC-08) ──

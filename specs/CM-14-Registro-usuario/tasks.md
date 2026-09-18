@@ -46,7 +46,7 @@ decisiones del Gateway están cerradas.
 
 ### Decisiones de otros equipos (no bloquean el Gateway)
 
-- [ ] T-00k · Definir la ruta exacta de verificación de correo, la única permitida con `email_verified=false` (`GW-TBD-17`). **Política ya decidida el 15/09/2026:** sin correo verificado no se puede hacer nada más. Queda para una sesión futura; al cerrarse entra como requisito nuevo del Gateway con su código de error
+- [x] T-00k · Definir la ruta exacta de verificación de correo, la única permitida con `email_verified=false` (`GW-TBD-17`) — *cerrada el 17/09/2026 por el contrato de cameia-cuentas: `POST /api/v1/users/me/verification`, Caso A. El Gateway la implementa en `specs/CM-14-verificacion-correo/`; sigue abierto si bloquea el resto de rutas*. **Política ya decidida el 15/09/2026:** sin correo verificado no se puede hacer nada más. Queda para una sesión futura; al cerrarse entra como requisito nuevo del Gateway con su código de error
 - [x] T-00l · Definir qué responde el registro ante un correo ya registrado: `409` con mensaje de usuario existente — Juan Vela, 15/09/2026 (`GW-TBD-21`, spec C-5)
 
 ### Avisos a enviar
