@@ -21,7 +21,7 @@ BASE = {
     "body": (
         "## Cambio\n"
         "- Jira: https://f0rktech.atlassian.net/browse/CM-500\n"
-        "- Responsable: Paula Andrea Munoz Delgado | DevOps\n"
+        "- Responsable: Nombre Apellido | DevOps\n"
         "- Cambio: caso base para pruebas negativas.\n\n"
         "## Evidencia\n"
         "- Evidencia: PASA - revision manual\n\n"
@@ -30,7 +30,7 @@ BASE = {
         "- Riesgo: bajo — sin impacto real\n\n"
         "## IA y responsabilidad\n"
         "- IA: no — caso de prueba manual\n"
-        "- Control humano: pendiente — Paula Andrea Munoz Delgado\n"
+        "- Control humano: pendiente — Nombre Apellido\n"
     ),
     "draft": True,
     "same_repository": True,
@@ -72,8 +72,8 @@ CASES = [
              "- IA: no — caso de prueba manual", "- IA: si — uso real de IA"))),
     case("N11 Control humano con palabra vieja 'confirmado' (PR NO borrador)", "control humano:",
          lambda p: p.__setitem__("body", p["body"].replace(
-             "- Control humano: pendiente — Paula Andrea Munoz Delgado",
-             "- Control humano: confirmado — Paula Andrea Munoz Delgado")),
+             "- Control humano: pendiente — Nombre Apellido",
+             "- Control humano: confirmado — Nombre Apellido")),
          draft=False),
     case("N12 promocion develop->main con head distinto de develop", "rama:",
          lambda p: (p.__setitem__("base", "main"),
@@ -107,8 +107,8 @@ def main():
         "- IA: no — caso de prueba manual",
         "- IA: sí — caso de prueba manual")
     tilde["body"] = tilde["body"].replace(
-        "- Control humano: pendiente — Paula Andrea Munoz Delgado",
-        "- Control humano: revisado por el autor — Paula Andrea Munoz Delgado; 18-sep-2026; abc1234")
+        "- Control humano: pendiente — Nombre Apellido",
+        "- Control humano: revisado por el autor — Nombre Apellido; 18-sep-2026; abc1234")
     tilde_out = validate(tilde)
     if tilde_out["errors"]:
         failures.append(f"Regresion CM-175: 'IA: si' con tilde no deberia fallar: {tilde_out['errors']}")
