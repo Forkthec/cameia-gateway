@@ -261,6 +261,9 @@ Los microservicios reciben solo lo necesario para su autorización de negocio, *
 8. `X-User-Plan` propagado vacío o nulo.
 9. Secreto real (`private_key`, token, contraseña) en cualquier archivo versionado.
 
+Antes de abrir un PR que toque autenticación, autorización o datos de otro usuario: revisar
+`cameia-infra/docs/seguridad/matriz-asvs-nivel1.md` (DoD §Condicionales).
+
 ---
 
 ## 8. Pruebas
