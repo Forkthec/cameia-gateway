@@ -1,6 +1,6 @@
 # Numeraciones usadas en `specs/`
 
-- **Actualizado:** 15/09/2026
+- **Actualizado:** 19/09/2026
 - **Para qué existe:** evitar IDs repetidos entre specs. El 15/09/2026 se detectó que `GW-TBD-10` y
   `GW-TBD-11` estaban asignados dos veces, y hubo que renumerar.
 - **Regla:** antes de asignar un ID nuevo de la serie `GW-TBD`, se consulta este archivo y se
@@ -17,12 +17,14 @@
 | `CM-104-correcciones-OIDC/` | CM-104 (revisión) | 1 |
 | `CM-113-integracion-perfil/` | CM-113 | 1 |
 | `CM-14-Registro-usuario/` | CM-14 | 1 |
+| `CM-14-verificacion-correo/` | CM-14 (continuación) | 1 |
+| `CM-184-nivel-log-4xx/` | CM-184 | 1 |
 
 ---
 
 ## 2. Clarificaciones `GW-TBD` — serie única para todo el repositorio
 
-**Siguiente número libre: `GW-TBD-27`.**
+**Siguiente número libre: `GW-TBD-28`.**
 
 El estado solo se anota donde el spec lo registra; en el resto, el spec es la fuente.
 
@@ -54,6 +56,7 @@ El estado solo se anota donde el spec lo registra; en el resto, el spec es la fu
 | `GW-TBD-24` | CM-104-correcciones-OIDC | Service account del Gateway en Cloud Run *(antes `GW-TBD-10` en ese spec)* | Respondido. Creación pendiente |
 | `GW-TBD-25` | CM-104-correcciones-OIDC | Quién concede `roles/run.invoker` *(antes `GW-TBD-11` en ese spec)* | Respondido. Ejecución pendiente |
 | `GW-TBD-26` | CM-14-verificacion-correo | Propagar `email_verified` o rechazar con `403` en el Gateway | ✅ Cerrado: se propaga en `X-User-Email-Verified` |
+| `GW-TBD-27` | CM-184-nivel-log-4xx | Nivel de log de cada estado: `404` en `INFO` y resto de `4xx` en `WARN`, todo `4xx` en `WARN`, o no tocar el código | ✅ Cerrado 19/09/2026: opción 1 (`404` → `INFO`, otros `4xx` → `WARN`, los dos sin traza) |
 
 ---
 
@@ -66,6 +69,8 @@ El estado solo se anota donde el spec lo registra; en el resto, el spec es la fu
 | CM-113-integracion-perfil | `REQ-01` … `REQ-10` |
 | CM-104-correcciones-OIDC | `REQ-OIDC-01` … `REQ-OIDC-09`, `REQ-NF-OIDC-01` … `REQ-NF-OIDC-03` |
 | CM-14-Registro-usuario | `REQ-REG-01` … `REQ-REG-10`, `REQ-NF-REG-01` … `REQ-NF-REG-02` |
+| CM-14-verificacion-correo | `REQ-VER-01` … `REQ-VER-06`, `REQ-NF-VER-01` … `REQ-NF-VER-02` |
+| CM-184-nivel-log-4xx | `REQ-LOG-01` … `REQ-LOG-05`, `REQ-NF-LOG-01` … `REQ-NF-LOG-02` |
 
 > `REQ-NN` sin prefijo se repite entre base técnica, correcciones y CM-113. Al citarlos desde otro
 > spec, se nombra el spec. Los specs nuevos usan un prefijo propio (`REQ-OIDC`, `REQ-REG`).
@@ -82,5 +87,6 @@ El estado solo se anota donde el spec lo registra; en el resto, el spec es la fu
 | CM-104-correcciones-OIDC | `T-INF-01` … `T-INF-04`, `T-01` … `T-29` |
 | CM-14-Registro-usuario | `T-00a` … `T-00q`, `T-01` … `T-24` (`T-13` omitida) |
 | CM-14-verificacion-correo | `T-01` … `T-13` |
+| CM-184-nivel-log-4xx | `T-01` … `T-15` |
 
 > Los `T-NN` se repiten entre specs por diseño: se citan siempre junto al spec.

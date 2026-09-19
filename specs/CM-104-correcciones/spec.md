@@ -223,6 +223,10 @@ Mientras el sistema responde un error, debe registrar en el log
 la excepción original con su `X-Request-Id` asociado.
 ```
 
+> **Enmendado por CM-184:** el nivel y la traza dependen del estado; ver
+> `specs/CM-184-nivel-log-4xx/spec.md`. Un `5xx` conserva este comportamiento; un `4xx` deja una
+> sola línea sin traza y sin el mensaje de la excepción.
+
 ### 2.5 Coherencia interna
 
 #### REQ-08 (sin cambio, reforzado) — Sin lógica de negocio

@@ -181,6 +181,33 @@ class GatewayErrorMappingTest {
                 .contains("Fallo al procesar la solicitud [requestId=" + requestId + "]");
     }
 
+    // ── CM-184 T-06: una ruta inexistente no deja traza en el log ────────────
+
+    /**
+     * `REQ-LOG-02` del spec `CM-184-nivel-log-4xx`: una URL que no coincide con ninguna ruta
+     * responde `404` y deja una sola línea `INFO` con su `X-Request-Id`. La traza de
+     * `NoResourceFoundException` —el 90% de los errores que hoy ve Cloud Logging— ya no aparece.
+     *
+     * <p>Es el caso de extremo a extremo: usa la excepción que Spring lanza de verdad, no una
+     * simulada.
+     *
+     * @param output salida de consola capturada durante la prueba
+     */
+    @Test
+    void unknownRoute_isLoggedAtInfoWithoutStackTrace(CapturedOutput output) {
+        EntityExchangeResult<byte[]> result = webTestClient.get()
+                .uri("/index.php")
+                .exchange()
+                .expectStatus().isEqualTo(404)
+                .expectBody().returnResult();
+
+        String requestId = result.getResponseHeaders().getFirst("X-Request-Id");
+        assertThat(requestId).isNotBlank();
+        assertThat(output.getOut())
+                .contains("Solicitud a una ruta inexistente [requestId=" + requestId + "]")
+                .doesNotContain("NoResourceFoundException");
+    }
+
     // ── Utilidad ─────────────────────────────────────────────────────────────
 
     /**
