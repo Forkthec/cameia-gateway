@@ -39,6 +39,9 @@ env:
   # Nombre de la imagen en Artifact Registry: fijo, no cambia con el ambiente. El
   # nombre del Cloud Run Service sí cambia (inputs.servicio).
   IMAGEN_NOMBRE: cameia-gateway
+  # Red y subred de staging: las mismas en las que corren Perfil, Cuentas y Entrevista.
+  VPC_NETWORK: cameia-staging
+  VPC_SUBNET: cameia-staging-us-east1
 
 jobs:
   desplegar:
@@ -97,9 +100,8 @@ jobs:
       # anularía esa separación, porque cualquier otra cosa que corra con la misma
       # identidad heredaría el mismo acceso sin necesitarlo.
       # Nota: tener el permiso de invocación no basta por sí solo para que la llamada
-      # funcione en la práctica -- este servicio todavía no firma ninguna credencial de
-      # identidad hacia sus llamadas salientes, así que un destino con ingreso interno
-      # seguiría rechazando la petición hasta que ese código exista.
+      # funcione en la práctica -- además hace falta que salga por la red privada (ver
+      # --network más abajo); sin eso el destino la rechaza aunque el permiso exista.
       #
       # Sin --allow-unauthenticated a propósito: el SA de despliegue no tiene (ni
       # necesita) permiso para tocar la política IAM del servicio — el acceso público
@@ -110,6 +112,16 @@ jobs:
       # red privada. La política de invocación (IAM) es una capa aparte y no cambia
       # con esto: quien ya podía invocar el servicio antes de este cambio lo sigue
       # pudiendo hacer, solo que ahora únicamente por ese camino de red permitido.
+      #
+      # --network, --subnet y --vpc-egress=all-traffic: los tres destinos solo aceptan
+      # tráfico interno (ingreso interno). Cloud Run exige que una llamada entre servicios
+      # salga por la red privada; si no, la rechaza con un 404 que no llega al contenedor
+      # de destino ni queda en sus logs, y este servicio lo devuelve tal cual al cliente.
+      # Sin red propia el Gateway no podía reenviar nada a Perfil, Cuentas ni Entrevista,
+      # con o sin permiso de invocación. Van los mismos valores que usan los destinos. La
+      # subred tiene acceso privado a las APIs de Google y Cloud NAT, así que la salida a
+      # internet (por ejemplo, las claves con las que se verifican los tokens de Firebase)
+      # sigue funcionando.
       #
       # GATEWAY_CORS_ALLOWED_ORIGIN lleva los orígenes reales del frontend, separados por
       # coma en un solo valor (application.yml los reparte). Va en este archivo versionado,
@@ -141,6 +153,9 @@ jobs:
             --max-instances=2 \
             --ingress=internal-and-cloud-load-balancing \
             --service-account="cameia-gateway-run@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com" \
+            --network="${{ env.VPC_NETWORK }}" \
+            --subnet="${{ env.VPC_SUBNET }}" \
+            --vpc-egress=all-traffic \
             --set-env-vars="^;^SPRING_PROFILES_ACTIVE=prod;CAMEIA_PERFIL_URL=https://cameia-perfil-og25p6yagq-ue.a.run.app;CAMEIA_CUENTAS_URL=https://cameia-cuentas-og25p6yagq-ue.a.run.app;CAMEIA_ENTREVISTA_URL=https://cameia-entrevista-og25p6yagq-ue.a.run.app;FIREBASE_PROJECT_ID=${{ vars.GCP_PROJECT_ID }};GATEWAY_CORS_ALLOWED_ORIGIN=https://cameia.app,https://cameia-e245f.web.app,https://cameia-e245f.firebaseapp.com,https://cameia-e245f--staging-gwyx3iui.web.app"
 
       - name: URL del servicio desplegado
