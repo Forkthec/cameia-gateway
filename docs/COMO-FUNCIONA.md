@@ -417,6 +417,7 @@ abierto como `GW-TBD-11`.
 | Timeout al microservicio | 30 s (`GATEWAY_TIMEOUT_MS`); al agotarse, `504` | `httpclient.response-timeout` |
 | `X-Request-Id` | Se conserva el del cliente o se genera uno. Llega al microservicio y vuelve al cliente con un único valor | `FirebaseAuthGlobalFilter` |
 | Formato de error | `{"code":"...","message":"..."}` desde un catálogo cerrado | `GlobalErrorHandler` |
+| Nivel del log del error | `5xx`: `ERROR` con traza. `404`: `INFO` sin traza. Otros `4xx`: `WARN` sin traza | `GlobalErrorHandler` (CM-184) |
 
 CORS ya no admite ninguna cabecera `X-User-*`. Comprobado con el gateway corriendo: un preflight que pide
 `X-User-Id` recibe `403`; uno que pide `X-Request-Id` recibe `200`.
@@ -433,16 +434,22 @@ El catálogo de errores (spec `CM-104-correcciones` §2.4):
 | Cualquier otro fallo del gateway | `500` | `INTERNAL_ERROR` | `GlobalErrorHandler` |
 
 El mensaje es siempre un texto fijo en español. **El mensaje de la excepción nunca llega al cuerpo**: va al log
-en nivel `ERROR`, con el mismo `X-Request-Id` que recibió el microservicio. `GatewayErrorMappingTest` lo
-comprueba con un destino lento (`504`), uno inalcanzable (`503`) y buscando `Exception`, `java.` y el host en
-los cuerpos.
+con el mismo `X-Request-Id` que recibió el microservicio. `GatewayErrorMappingTest` lo comprueba con un destino
+lento (`504`), uno inalcanzable (`503`) y buscando `Exception`, `java.` y el host en los cuerpos.
+
+**El nivel del log depende del estado** (spec `CM-184-nivel-log-4xx`): un `5xx` sale en `ERROR` con la traza
+completa, porque es lo que hay que investigar; un `404` sale en `INFO` y cualquier otro `4xx` en `WARN`, los dos
+en una sola línea con el `X-Request-Id` y **sin traza**. El motivo es medible: el 90% de las entradas `ERROR`
+que veía Cloud Logging el 19/09/2026 (402 de 447) eran `NoResourceFoundException` de escáneres pidiendo
+`index.php`, `favicon.ico` o `remote/login`. De un `4xx` tampoco se registra la URL ni el mensaje de la
+excepción: es texto que escribe el cliente.
 
 ⚠️ Tres avisos sobre esta sección:
 
 - Un estado que no está en el catálogo conserva su código pero sale con cuerpo `INTERNAL_ERROR`. Ejemplo real:
   `POST /actuator/health` responde `405` con `{"code":"INTERNAL_ERROR"}`. Abierto como `GW-TBD-10`.
-- Todo error pasa por el log en `ERROR` con traza completa, incluidos los `404` de URLs inexistentes. Un
-  escáner de URLs llena el log.
+- ~~Todo error pasa por el log en `ERROR` con traza completa, incluidos los `404` de URLs inexistentes. Un
+  escáner de URLs llena el log.~~ Corregido en CM-184: ver el párrafo de niveles de arriba.
 - CORS no declara `exposedHeaders`, así que el JavaScript del navegador **no puede leer** el `X-Request-Id`
   de la respuesta, aunque llegue.
 

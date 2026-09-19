@@ -29,7 +29,11 @@ import java.util.concurrent.TimeoutException;
  *
  * <p>Orden {@code -1}: corre antes del {@code DefaultErrorWebExceptionHandler} de Spring.
  *
- * <p>Requisitos: {@code specs/CM-104-correcciones/spec.md}.
+ * <p>El nivel del log depende del estado: un {@code 5xx} sale en {@code ERROR} con traza; un
+ * {@code 404} en {@code INFO} y el resto de {@code 4xx} en {@code WARN}, ambos sin traza (CM-184).
+ *
+ * <p>Requisitos: {@code specs/CM-104-correcciones/spec.md} y
+ * {@code specs/CM-184-nivel-log-4xx/spec.md}.
  */
 @Component
 @Order(-1)
@@ -74,7 +78,7 @@ public class GlobalErrorHandler implements WebExceptionHandler {
             new MediaType("application", "json", StandardCharsets.UTF_8);
 
     /**
-     * Registra la excepción y responde con el estado y el cuerpo del catálogo.
+     * Registra el fallo con el nivel que corresponde a su estado y responde con el cuerpo del catálogo.
      *
      * @param exchange intercambio HTTP en el que ocurrió el error
      * @param ex       excepción original
@@ -88,10 +92,10 @@ public class GlobalErrorHandler implements WebExceptionHandler {
         }
 
         String requestId = resolveRequestId(exchange);
-        // REQ-12: el detalle va al log, nunca al cuerpo de la respuesta
-        log.error("Fallo al procesar la solicitud [requestId={}]", requestId, ex);
-
         HttpStatus status = resolveStatus(ex);
+        // REQ-12: el detalle va al log, nunca al cuerpo de la respuesta
+        logFailure(requestId, status, ex);
+
         ErrorBody body = CATALOG.getOrDefault(status, DEFAULT_BODY);
         // Sin escape de JSON: code y message son constantes del catálogo, sin texto de origen externo
         byte[] bytes = """
@@ -122,6 +126,48 @@ public class GlobalErrorHandler implements WebExceptionHandler {
         String requestId = incoming == null || incoming.isBlank() ? UUID.randomUUID().toString() : incoming;
         exchange.getResponse().getHeaders().set(X_REQUEST_ID, requestId);
         return requestId;
+    }
+
+    /**
+     * Registra el fallo con el nivel que corresponde a su estado HTTP (REQ-LOG-01 de CM-184).
+     *
+     * <p>Un error del servidor (5xx) conserva su traza completa: es lo que hay que investigar. Un
+     * error del cliente (4xx) es esperado —la mayoría son escáneres de internet pidiendo rutas que
+     * no existen— y su traza no aporta nada, así que sale una sola línea.
+     *
+     * @param requestId identificador de trazabilidad de la solicitud
+     * @param status    estado HTTP con el que se responde
+     * @param ex        excepción original
+     */
+    private void logFailure(String requestId, HttpStatus status, Throwable ex) {
+        if (status.is4xxClientError()) {
+            logClientError(requestId, status, ex);
+        } else {
+            log.error("Fallo al procesar la solicitud [requestId={}]", requestId, ex);
+        }
+    }
+
+    /**
+     * Registra un error del cliente en una sola línea, sin traza (REQ-LOG-02, REQ-LOG-03).
+     *
+     * <p>No se registra el mensaje de la excepción ni la URL: en un {@code 404} incluyen texto que
+     * envió el cliente, y ese texto no debe llegar al log sin control (REQ-LOG-05). Del error sale
+     * solo el nombre de su clase, que es texto del código.
+     *
+     * <p>El {@code 404} baja a {@code INFO} porque son cientos al día y llenarían {@code WARN};
+     * cualquier otro {@code 4xx} sí merece atención, como el frontend llamando mal a una ruta.
+     *
+     * @param requestId identificador de trazabilidad de la solicitud
+     * @param status    estado HTTP con el que se responde
+     * @param ex        excepción original
+     */
+    private void logClientError(String requestId, HttpStatus status, Throwable ex) {
+        if (status == HttpStatus.NOT_FOUND) {
+            log.info("Solicitud a una ruta inexistente [requestId={}]", requestId);
+        } else {
+            log.warn("Solicitud rechazada con error del cliente [requestId={}, estado={}, tipo={}]",
+                    requestId, status.value(), ex.getClass().getSimpleName());
+        }
     }
 
     /**

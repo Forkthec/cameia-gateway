@@ -125,7 +125,7 @@ exception      independiente
 | `GatewayApplication` | raíz | `@SpringBootApplication`, punto de entrada |
 | `FirebaseConfig` | `config` | Inicializa `FirebaseApp` en `@PostConstruct`; falla en arranque si las credenciales son inválidas (fail-fast) |
 | `FirebaseAuthGlobalFilter` | `filter` | Resuelve `X-Request-Id` y lo devuelve en la respuesta. Caso A: valida el Bearer token (`401` si falta, está vacío o Firebase lo rechaza), borra los `X-User-*` del cliente, emite `X-User-Id`, `X-User-Email`, `X-User-Roles`, `X-User-Plan` y `X-User-Email-Verified` con `set` y elimina `Authorization`. Caso B, por método y ruta exactos (`PUBLIC_ROUTES`, y `DEV_PUBLIC_ROUTES` solo con el perfil `local`): borra los `X-User-*` y el `Authorization` del cliente. Falla el arranque si `local` está activo con `K_SERVICE` definida |
-| `GlobalErrorHandler` | `exception` | Formatea el error como `{"code":"...","message":"..."}` desde un catálogo cerrado (`AUTH_REQUIRED`, `NOT_FOUND`, `BAD_GATEWAY`, `SERVICE_UNAVAILABLE`, `GATEWAY_TIMEOUT`, `INTERNAL_ERROR`). Nunca copia el mensaje de la excepción: la registra en el log con su `X-Request-Id` |
+| `GlobalErrorHandler` | `exception` | Formatea el error como `{"code":"...","message":"..."}` desde un catálogo cerrado (`AUTH_REQUIRED`, `NOT_FOUND`, `BAD_GATEWAY`, `SERVICE_UNAVAILABLE`, `GATEWAY_TIMEOUT`, `INTERNAL_ERROR`). Nunca copia el mensaje de la excepción: la registra en el log con su `X-Request-Id`. El nivel depende del estado: 5xx `ERROR` con traza; 404 `INFO` y otros 4xx `WARN`, ambos sin traza (CM-184) |
 | `OidcConfig` | `config` | Con `gateway.oidc.signing-enabled=true` crea `GoogleIdTokenSource` y `OidcSigningGlobalFilter`; con `false` no crea ningún bean. La fuente real se apaga en pruebas con `gateway.oidc.google-credentials.enabled=false` |
 | `OidcRequiredInProd` | `config` | Con el perfil `prod`, falla el arranque si la firma OIDC está apagada |
 | `OidcTokenSource` | `filter` | Interfaz de una operación, `tokenFor(audience)`. Permite probar la firma con una fuente falsa |
@@ -293,7 +293,7 @@ Cómo ejecutar sin instalar Java ni Maven:
 docker compose run --rm verify
 ```
 
-Resultado esperado: `BUILD SUCCESS`. Hoy son 70 pruebas; el número sube a medida que se cubran las brechas de §6.5, y ninguna existente debe ponerse roja al hacerlo.
+Resultado esperado: `BUILD SUCCESS`. Hoy son 79 pruebas; el número sube a medida que se cubran las brechas de §6.5, y ninguna existente debe ponerse roja al hacerlo.
 
 ---
 
