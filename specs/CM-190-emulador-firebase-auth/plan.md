@@ -46,7 +46,7 @@ Cada guardia queda en su clase porque `AGENTS.md` §3 prohíbe que `filter` impo
 | Prueba | Tipo | Cubre |
 |---|---|---|
 | `FirebaseConfigTest` | Unitaria, sin contexto de Spring (`MockEnvironment`) | `REQ-EMU-01`, `-02`, `-03` |
-| `GatewayStartupTest` (casos nuevos) | Contexto completo con `FirebaseConfig` activo | `REQ-EMU-01`, `-02` |
+| `FirebaseEmulatorStartupTest` | Contexto completo con `FirebaseConfig` activo | `REQ-EMU-01`, `-02` |
 | Suite existente | Sin modificar | `REQ-NF-EMU-02` |
 
 Casos de `FirebaseConfigTest`: (1) con la variable y sin despliegue, inicializa con las credenciales

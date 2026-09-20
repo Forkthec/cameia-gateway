@@ -32,6 +32,11 @@ services:
       FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID}
       # La clave se monta como volumen de solo lectura; nunca se copia a la imagen ni al repo.
       GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/firebase-key
+      # Emulador de Firebase Auth. Sin valor a propósito: Compose la pasa al contenedor solo si está
+      # definida en el entorno o en .env, y si no lo está, el contenedor no la recibe. Con ella el
+      # gateway arranca sin llave de service account y acepta tokens sin firma, por eso el gateway
+      # se niega a arrancar si la ve en un despliegue. Ejemplo: cameia-firebase-emulator:9099
+      FIREBASE_AUTH_EMULATOR_HOST:
       # Nombre de contenedor de perfil dentro de cameia-net — no configurable por entorno.
       CAMEIA_PERFIL_URL: http://cameia-perfil-app:8082
       # Dentro de cameia-net se usa el nombre de contenedor y el puerto INTERNO del

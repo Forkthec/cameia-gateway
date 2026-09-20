@@ -15,23 +15,23 @@
 
 ## Bloque 1 — Código
 
-- [ ] T-01 · `FirebaseConfig`: constructor con `FIREBASE_PROJECT_ID` y `Environment`, campos `private final` (plan §1)
-- [ ] T-02 · `rejectEmulatorInDeployment()` y su llamada al inicio de `init()` (`REQ-EMU-02`)
-- [ ] T-03 · `resolveCredentials()`, `defaultCredentials()` y las credenciales ficticias (`REQ-EMU-01`, `REQ-EMU-03`)
+- [x] T-01 · `FirebaseConfig`: constructor con `FIREBASE_PROJECT_ID` y `Environment`, campos `private final` (plan §1) — 19/09/2026: constructor `FirebaseConfig(String, Environment)` con campos `private final`
+- [x] T-02 · `rejectEmulatorInDeployment()` y su llamada al inicio de `init()` (`REQ-EMU-02`) — 19/09/2026: `rejectEmulatorInDeployment()` corre primero en `init()`; cuenta la variable definida aunque esté vacía
+- [x] T-03 · `resolveCredentials()`, `defaultCredentials()` y las credenciales ficticias (`REQ-EMU-01`, `REQ-EMU-03`) — 19/09/2026: `resolveCredentials()`, `defaultCredentials()` (punto de sustitución para pruebas) y credenciales ficticias
 
 ## Bloque 2 — Pruebas
 
-- [ ] T-04 · `FirebaseConfigTest` con los seis casos del plan §3
-- [ ] T-05 · `GatewayStartupTest`: contexto completo con la variable y `K_SERVICE` (falla) y con la variable sola (arranca)
-- [ ] T-06 · `docker compose run --rm verify` en verde; anotar el número de pruebas antes (79) y después
+- [x] T-04 · `FirebaseConfigTest` con los seis casos del plan §3 — 19/09/2026: siete casos, uno más que los seis del plan: se añadió `K_SERVICE` sin la variable, que prueba que la guardia no rompe la ruta normal de producción
+- [x] T-05 · `FirebaseEmulatorStartupTest`: contexto completo con la variable y `K_SERVICE` (falla) y con la variable sola (arranca) — 19/09/2026: `FirebaseEmulatorStartupTest`: 3 pruebas (falla con `K_SERVICE`, falla con perfil `prod`, arranca sin despliegue)
+- [x] T-06 · `docker compose run --rm verify` en verde; anotar el número de pruebas antes (79) y después — 19/09/2026: 79 pruebas antes, 89 después (7 + 3 nuevas); `BUILD SUCCESS`. Con la guardia quitada a propósito fallan exactamente las 5 pruebas de la guardia
 
 ## Bloque 3 — Compose, ejemplos y documentación
 
-- [ ] T-07 · `docker-compose.yml` (`REQ-EMU-04`) y `.env.example`; comprobar con `docker compose config` con y sin la variable
-- [ ] T-08 · `AGENTS.md` §4 y §9; `docs/DOCKER-LOCAL.md`; `docs/COMO-FUNCIONA.md`
-- [ ] T-09 · `specs/NUMERACIONES.md`: carpeta nueva, `GW-TBD-28` y siguiente número libre
+- [x] T-07 · `docker-compose.yml` (`REQ-EMU-04`) y `.env.example`; comprobar con `docker compose config` con y sin la variable — 19/09/2026: `docker compose config` en tres escenarios y, con el entorno real del contenedor, 0 líneas sin la variable y 1 con ella
+- [x] T-08 · `AGENTS.md` §4 y §9; `docs/DOCKER-LOCAL.md`; `docs/COMO-FUNCIONA.md` — 19/09/2026: `AGENTS.md` §4 y §9, `docs/DOCKER-LOCAL.md` y `docs/COMO-FUNCIONA.md`
+- [x] T-09 · `specs/NUMERACIONES.md`: carpeta nueva, `GW-TBD-28` y siguiente número libre — 19/09/2026: carpeta nueva, `GW-TBD-28` y siguiente número libre `GW-TBD-29`
 
 ## Bloque 4 — Extremo a extremo y cierre
 
-- [ ] T-10 · Prueba de extremo a extremo con el emulador real (plan §3); registrar la salida en el PR
+- [x] T-10 · Prueba de extremo a extremo con el emulador real (plan §3); registrar la salida en el PR — 19/09/2026: emulador real + gateway en Docker + perfil de mentira: el token del emulador llega con `X-User-*` (incluido `X-User-Plan: FREE`); token basura, sin token y Bearer vacío dan `401`; la guardia impide el arranque en el contenedor real
 - [ ] T-11 · Commit, PR hacia `develop` con `[IA-ASISTIDO]` en el título, comentario de cierre en Jira

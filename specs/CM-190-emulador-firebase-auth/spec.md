@@ -131,8 +131,8 @@ credenciales de arranque.
 
 | Requisito | Prueba |
 |---|---|
-| `REQ-EMU-01` | `FirebaseConfigTest` (unitaria) y `GatewayStartupTest` (contexto completo) |
-| `REQ-EMU-02` | `FirebaseConfigTest` (`K_SERVICE`, perfil `prod`, variable vacía) y `GatewayStartupTest` (contexto completo) |
+| `REQ-EMU-01` | `FirebaseConfigTest` (unitaria) y `FirebaseEmulatorStartupTest` (contexto completo) |
+| `REQ-EMU-02` | `FirebaseConfigTest` (`K_SERVICE`, perfil `prod`, variable vacía) y `FirebaseEmulatorStartupTest` (contexto completo) |
 | `REQ-EMU-03` | `FirebaseConfigTest` |
 | `REQ-EMU-04` | Comprobación manual con `docker compose config` (registrada en el PR) |
 | `REQ-NF-EMU-02` | Suite existente sin modificar, en verde |

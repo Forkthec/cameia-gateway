@@ -123,7 +123,7 @@ exception      independiente
 | Clase | Paquete | Qué hace |
 |---|---|---|
 | `GatewayApplication` | raíz | `@SpringBootApplication`, punto de entrada |
-| `FirebaseConfig` | `config` | Inicializa `FirebaseApp` en `@PostConstruct`; falla en arranque si las credenciales son inválidas (fail-fast) |
+| `FirebaseConfig` | `config` | Inicializa `FirebaseApp` en `@PostConstruct`; falla en arranque si las credenciales son inválidas (fail-fast). Con `FIREBASE_AUTH_EMULATOR_HOST` con valor y fuera de un despliegue usa credenciales ficticias (emulador de Firebase Auth) en vez de las de Google. Con esa variable definida —aunque esté vacía— y `K_SERVICE` o el perfil `prod`, **falla el arranque**: el emulador emite tokens sin firma y el SDK los aceptaría (`specs/CM-190-emulador-firebase-auth/`) |
 | `FirebaseAuthGlobalFilter` | `filter` | Resuelve `X-Request-Id` y lo devuelve en la respuesta. Caso A: valida el Bearer token (`401` si falta, está vacío o Firebase lo rechaza), borra los `X-User-*` del cliente, emite `X-User-Id`, `X-User-Email`, `X-User-Roles`, `X-User-Plan` y `X-User-Email-Verified` con `set` y elimina `Authorization`. Caso B, por método y ruta exactos (`PUBLIC_ROUTES`, y `DEV_PUBLIC_ROUTES` solo con el perfil `local`): borra los `X-User-*` y el `Authorization` del cliente. Falla el arranque si `local` está activo con `K_SERVICE` definida |
 | `GlobalErrorHandler` | `exception` | Formatea el error como `{"code":"...","message":"..."}` desde un catálogo cerrado (`AUTH_REQUIRED`, `NOT_FOUND`, `BAD_GATEWAY`, `SERVICE_UNAVAILABLE`, `GATEWAY_TIMEOUT`, `INTERNAL_ERROR`). Nunca copia el mensaje de la excepción: la registra en el log con su `X-Request-Id`. El nivel depende del estado: 5xx `ERROR` con traza; 404 `INFO` y otros 4xx `WARN`, ambos sin traza (CM-184) |
 | `OidcConfig` | `config` | Con `gateway.oidc.signing-enabled=true` crea `GoogleIdTokenSource` y `OidcSigningGlobalFilter`; con `false` no crea ningún bean. La fuente real se apaga en pruebas con `gateway.oidc.google-credentials.enabled=false` |
@@ -310,8 +310,9 @@ docker compose up --build -d              # arranca el gateway
 
 | Variable | Descripción |
 |---|---|
-| `FIREBASE_PROJECT_ID` | ID del proyecto en Firebase Console |
-| `FIREBASE_KEY_PATH` | Ruta absoluta al JSON de service account (nunca en el repo) |
+| `FIREBASE_PROJECT_ID` | ID del proyecto. Con el emulador, `demo-cameia`; con un proyecto real, el ID de Firebase Console |
+| `FIREBASE_AUTH_EMULATOR_HOST` | Camino por defecto en local: dirección del emulador de Firebase Auth, `cameia-firebase-emulator:9099`. Sustituye a la llave. **Nunca en un despliegue**: el gateway no arranca si la ve junto a `K_SERVICE` o al perfil `prod` |
+| `FIREBASE_KEY_PATH` | Solo sin emulador: ruta absoluta al JSON de service account (nunca en el repo) |
 
 ### Variables con default razonable
 
@@ -326,7 +327,7 @@ docker compose up --build -d              # arranca el gateway
 | `CAMEIA_CUENTAS_URL` | `http://cameia-cuentas-app:8081` |
 | `CAMEIA_ENTREVISTA_URL` | `http://cameia-entrevista-app:8083` |
 
-**`FIREBASE_KEY_PATH` vacío** → compose usa `/dev/null` como fallback → el gateway **no arranca** (fail-fast por diseño). El compañero de frontend necesita el JSON de Firebase de la responsable del gateway.
+**Sin `FIREBASE_AUTH_EMULATOR_HOST` y con `FIREBASE_KEY_PATH` vacío** → compose usa `/dev/null` como fallback → el gateway **no arranca** (fail-fast por diseño). Con el emulador (`docker compose up` levanta el servicio `firebase-emulator` y `.env.example` ya apunta a él) no hace falta ningún JSON: ni Backend ni Frontend necesitan credenciales de un proyecto real para desarrollar en local.
 
 El archivo de clave es un recurso **solo de desarrollo local**. En Cloud Run las Application Default Credentials salen del metadata server con la identidad de la service account del gateway: ahí no hay JSON que montar ni `GOOGLE_APPLICATION_CREDENTIALS` que definir. Las mismas ADC sirven para el Admin SDK y para firmar los tokens OIDC de §6.3.
 
