@@ -35,6 +35,11 @@
 - [ ] T-12 · **Aviso a cameia-entrevista y a cameia-cuentas:** §6.4 suma `X-User-Email-Verified`; las tres partes lo cambian a la vez
 - [ ] T-13 · Abrir el PR **solo con autorización expresa** (`AGENTS.md` §0, punto 1)
 
+## Bloque 4 — Corrección de seguridad del token
+
+- [x] T-14 · Activar la comprobación de tokens revocados mediante `verifyIdToken(idToken, true)` en el filtro de autenticación — 21/09/2026
+- [x] T-15 · Crear y ejecutar una prueba específica que confirme que un token revocado recibe `401 AUTH_REQUIRED` y no llega al downstream — `revokedToken_returns401AndDoesNotReachDownstream`
+
 ---
 
 ## Trazabilidad requisito → tarea

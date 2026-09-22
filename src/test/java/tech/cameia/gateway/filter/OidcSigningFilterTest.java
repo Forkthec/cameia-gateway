@@ -228,7 +228,7 @@ class OidcSigningFilterTest {
         FirebaseToken token = mock(FirebaseToken.class);
         when(token.getUid()).thenReturn("uid-oidc");
         when(token.getClaims()).thenReturn(Map.of());
-        when(firebaseAuth.verifyIdToken(idToken)).thenReturn(token);
+        when(firebaseAuth.verifyIdToken(idToken, true)).thenReturn(token);
         mockDownstream.enqueue(new MockResponse().setResponseCode(200));
 
         webTestClient.get().uri("/api/v1/profiles/me")
