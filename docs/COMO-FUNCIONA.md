@@ -274,9 +274,13 @@ app
 ### Notas sobre la imagen y las credenciales
 
 - El contenedor corre con el usuario **`cameia`**, sin privilegios. Comprobado: `docker exec … whoami` responde `cameia`.
-- En local, la clave de Firebase se monta como volumen de solo lectura en `/run/secrets/firebase-key` y
-  **nunca se copia a la imagen**. Si `FIREBASE_KEY_PATH` está vacío en `.env`, Compose monta `/dev/null` y el
-  gateway no arranca: es un fallo intencional, no un bug.
+- En local, el camino por defecto es el **emulador de Firebase Auth**: con `FIREBASE_AUTH_EMULATOR_HOST` definida,
+  el gateway arranca con credenciales ficticias y no necesita ninguna llave. Como el emulador emite tokens sin
+  firma, el gateway **se niega a arrancar** si esa variable aparece en un despliegue (`K_SERVICE` definida o
+  perfil `prod`), incluso vacía.
+- Con un proyecto real de Firebase (sin la variable del emulador), la clave se monta como volumen de solo lectura
+  en `/run/secrets/firebase-key` y **nunca se copia a la imagen**. Si `FIREBASE_KEY_PATH` está vacío en `.env`,
+  Compose monta `/dev/null` y el gateway no arranca: es un fallo intencional, no un bug.
 - En Cloud Run no se monta ningún JSON. Los workflows de `.github/workflows/` despliegan con
   `--service-account` y sin `GOOGLE_APPLICATION_CREDENTIALS`, así que el Admin SDK toma las credenciales de la
   cuenta de servicio del servicio. Desde #39 es una cuenta dedicada, `cameia-gateway-run`, y no la de Compute

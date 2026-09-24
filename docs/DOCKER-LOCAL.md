@@ -11,7 +11,9 @@ Java, Maven ni PostgreSQL.
 - Tener clonados ambos repositorios:
   - `cameia-gateway` (este repo)
   - `cameia-perfil`
-- Un archivo JSON de service account de Firebase descargado desde
+- **Nada más.** Por defecto el gateway usa el emulador de Firebase Auth que trae el compose, así que
+  no necesitas un proyecto de Firebase ni ninguna llave. Solo si prefieres un proyecto real de
+  Firebase, necesitas además un JSON de service account descargado desde
   [Firebase Console → Configuración del proyecto → Cuentas de servicio](https://console.firebase.google.com/).
 
 ---
@@ -35,7 +37,19 @@ Copia el archivo de ejemplo y rellena los valores:
 cp .env.example .env
 ```
 
-Edita `.env` y completa al menos:
+Con el emulador no tienes que editar nada: `.env.example` ya trae estas dos líneas.
+
+```env
+FIREBASE_PROJECT_ID=demo-cameia
+FIREBASE_AUTH_EMULATOR_HOST=cameia-firebase-emulator:9099
+```
+
+Con la variable `FIREBASE_AUTH_EMULATOR_HOST` definida, el gateway arranca sin llave y acepta los
+tokens del emulador. **Esos tokens no van firmados**, por eso el gateway se niega a arrancar si
+esa variable aparece en un despliegue (Cloud Run o perfil `prod`), aunque esté vacía.
+
+Para usar un **proyecto real** de Firebase en su lugar, comenta la línea de
+`FIREBASE_AUTH_EMULATOR_HOST` y completa:
 
 ```env
 FIREBASE_PROJECT_ID=nombre-de-tu-proyecto-en-firebase
@@ -156,8 +170,25 @@ curl -H "Authorization: Bearer <tu-token-firebase>" \
 ```
 
 El token Firebase lo obtiene la aplicación front-end tras hacer sign-in con Firebase Auth.
-Para pruebas manuales puede usarse el SDK de Firebase Admin o las herramientas de la consola
-de Firebase para generar tokens de prueba.
+
+### Obtener un token del emulador
+
+Con el emulador no necesitas el front-end para probar una ruta protegida. Crea un usuario y pide
+su token (el valor de `key` puede ser cualquier texto):
+
+```bash
+curl -s -X POST "http://localhost:9099/identitytoolkit.googleapis.com/v1/accounts:signUp?key=falsa" \
+     -H "Content-Type: application/json" \
+     -d '{"email":"dev@example.com","password":"Clave-De-Prueba-2026","returnSecureToken":true}'
+```
+
+La respuesta trae `idToken`: ese valor es el `<tu-token-firebase>` del comando anterior. Para volver
+a pedirlo después, usa el mismo cuerpo contra `accounts:signInWithPassword`. En PowerShell escribe
+`curl.exe`, porque `curl` es un alias de otro comando.
+
+El gateway pasa al microservicio las cabeceras `X-User-Id`, `X-User-Email`,
+`X-User-Email-Verified` y, si el usuario tiene el claim `plan`, `X-User-Plan`. Un token inválido,
+vacío o ausente da `401`.
 
 ---
 

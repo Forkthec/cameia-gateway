@@ -19,12 +19,13 @@
 | `CM-14-Registro-usuario/` | CM-14 | 1 |
 | `CM-14-verificacion-correo/` | CM-14 (continuación) | 1 |
 | `CM-184-nivel-log-4xx/` | CM-184 | 1 |
+| `CM-190-emulador-firebase-auth/` | CM-190 (subtarea de CM-188) | 1 |
 
 ---
 
 ## 2. Clarificaciones `GW-TBD` — serie única para todo el repositorio
 
-**Siguiente número libre: `GW-TBD-28`.**
+**Siguiente número libre: `GW-TBD-29`.**
 
 El estado solo se anota donde el spec lo registra; en el resto, el spec es la fuente.
 
@@ -57,6 +58,7 @@ El estado solo se anota donde el spec lo registra; en el resto, el spec es la fu
 | `GW-TBD-25` | CM-104-correcciones-OIDC | Quién concede `roles/run.invoker` *(antes `GW-TBD-11` en ese spec)* | Respondido. Ejecución pendiente |
 | `GW-TBD-26` | CM-14-verificacion-correo | Propagar `email_verified` o rechazar con `403` en el Gateway | ✅ Cerrado: se propaga en `X-User-Email-Verified` |
 | `GW-TBD-27` | CM-184-nivel-log-4xx | Nivel de log de cada estado: `404` en `INFO` y resto de `4xx` en `WARN`, todo `4xx` en `WARN`, o no tocar el código | ✅ Cerrado 19/09/2026: opción 1 (`404` → `INFO`, otros `4xx` → `WARN`, los dos sin traza) |
+| `GW-TBD-28` | CM-190-emulador-firebase-auth | Si `FIREBASE_AUTH_EMULATOR_HOST` aparece en un despliegue, ¿el Gateway falla el arranque o la ignora? | ✅ Cerrado 19/09/2026: falla el arranque (el SDK la lee del entorno por su cuenta, no se puede ignorar) |
 
 ---
 
