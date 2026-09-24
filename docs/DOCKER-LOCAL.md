@@ -91,6 +91,73 @@ El gateway queda disponible en **http://localhost:8080**.
 
 ---
 
+## Emulador de Firebase Auth
+
+El compose incluye `firebase-emulator`, un emulador de Firebase Auth que sustituye a un
+proyecto real de Firebase en desarrollo local: no pide llave de service account ni cuenta de
+Google, y los usuarios que se crean en él solo existen en tu máquina. Es **una sola instancia**
+para todos los servicios de `cameia-net` y para el navegador.
+
+Se levanta junto con el gateway (`docker compose up --build -d`). La primera vez construye la
+imagen (Node más `firebase-tools`, unos 660 MB, un par de minutos). Para levantar solo el
+emulador, por ejemplo para trabajar en otro servicio sin el gateway:
+
+```bash
+docker compose up --build -d firebase-emulator
+docker compose ps        # STATUS debe mostrar "healthy"
+curl http://localhost:9099/
+```
+
+| Desde dónde | Dirección |
+|---|---|
+| Tu equipo (navegador, `curl`) | `http://localhost:9099` |
+| Otro contenedor de `cameia-net` | `http://cameia-firebase-emulator:9099` |
+| ID de proyecto | `demo-cameia` (variable `FIREBASE_EMULATOR_PROJECT_ID`, debe empezar por `demo-`) |
+
+El puerto se publica solo en `127.0.0.1`: otros equipos de la red no pueden llegar al emulador.
+
+### Qué se guarda y qué no
+
+Los usuarios se guardan en el volumen `firebase-emulator-data` **al apagar de forma ordenada**
+(`docker compose stop` o `docker compose down`) y se recuperan al volver a arrancar. Un apagado
+brusco (`docker kill`, cerrar Docker a la fuerza, un corte de luz) **no guarda nada**: se pierde
+lo creado desde el último apagado ordenado.
+
+Si al apagar no estás seguro de que se guardó, busca `Export complete` en
+`docker compose logs firebase-emulator`. Un fallo al exportar aparece ahí como `Export failed`,
+pero el contenedor termina igualmente con código 0.
+
+### Empezar de cero
+
+```bash
+# Borrar todos los usuarios sin apagar nada
+curl -X DELETE http://localhost:9099/emulator/v1/projects/demo-cameia/accounts
+
+# Borrar también lo guardado (elimina todos los volúmenes de este compose,
+# incluida la caché de Maven, que se vuelve a descargar)
+docker compose down -v
+```
+
+Hazlo cuando la base de datos de un servicio y el emulador queden desalineados. Por ejemplo, si
+borras la base de un servicio con `docker compose down -v` en su repositorio, el emulador
+conserva el usuario y ese correo ya no se puede volver a registrar. Al revés, si vacías el
+emulador y la base conserva sus filas, esos usuarios ya no pueden iniciar sesión.
+
+### Diferencias con Firebase real
+
+- **Los tokens no van firmados** (`alg: none`): el emulador sirve solo para desarrollo local y
+  la verificación criptográfica real únicamente se ejercita en staging.
+- **No envía correos.** El código de verificación de un correo se lee en
+  `http://localhost:9099/emulator/v1/projects/demo-cameia/oobCodes`.
+- **No aplica cuotas, límites de tasa ni dominios autorizados** (`authorizedDomains`).
+- **Códigos de error de inicio de sesión:** con una contraseña incorrecta o un usuario que no
+  existe, el emulador devuelve `auth/wrong-password` y `auth/user-not-found`. Según la
+  documentación de Firebase, un proyecto real con la protección contra enumeración de correos
+  activa devuelve `auth/invalid-credential` en ambos casos. No se ha comparado contra el
+  proyecto real: si tu código distingue esos códigos, pruébalo también en staging.
+
+---
+
 ## Verificación rápida
 
 ```bash
@@ -160,6 +227,7 @@ Resultado esperado: `BUILD SUCCESS` con 10 pruebas en verde.
 | Servicio | Puerto anfitrión | Descripción |
 |----------|-----------------|-------------|
 | cameia-gateway | 8080 | Punto de entrada HTTP — úsalo para todas las llamadas |
+| firebase-emulator | 9099 | Emulador de Firebase Auth — solo accesible desde tu equipo (`127.0.0.1`) |
 | cameia-perfil db | 5432 | PostgreSQL — solo para inspección con un cliente de BD |
 
 cameia-perfil no expone el puerto 8082 al front-end; solo es accesible a través del gateway.

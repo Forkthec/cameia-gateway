@@ -68,6 +68,45 @@ services:
       - cameia-net
 
   # ---------------------------------------------------------------------------
+  # Emulador de Firebase Auth. Sustituye a un proyecto real de Firebase en local:
+  # no necesita llave de service account y sus usuarios solo existen en esta máquina.
+  #
+  # Es UNA instancia compartida: los servicios de cameia-net lo alcanzan por nombre
+  # (http://cameia-firebase-emulator:9099) y el navegador en http://localhost:9099.
+  #
+  # - El puerto se publica solo en 127.0.0.1: el emulador no tiene autenticación y no debe
+  #   quedar expuesto a otros equipos de la red.
+  # - Su ID de proyecto tiene variable propia y NO se toma de FIREBASE_PROJECT_ID, para que
+  #   nunca arranque con el ID de un proyecto real. Debe empezar por "demo-".
+  # - Guarda los usuarios en el volumen firebase-emulator-data al apagarse de forma ordenada
+  #   (docker compose stop/down) y los recupera al arrancar. 'docker compose down -v' los borra.
+  # - Emite tokens sin firma: sirve únicamente para desarrollo local.
+  # ---------------------------------------------------------------------------
+  firebase-emulator:
+    build:
+      context: ./docker/firebase-emulator
+    image: cameia-firebase-emulator:local
+    container_name: cameia-firebase-emulator
+    environment:
+      FIREBASE_EMULATOR_PROJECT_ID: ${FIREBASE_EMULATOR_PROJECT_ID:-demo-cameia}
+    ports:
+      - "127.0.0.1:${FIREBASE_EMULATOR_PORT:-9099}:9099"
+    volumes:
+      - firebase-emulator-data:/data
+    healthcheck:
+      # Formato lista y no cadena: en una sola cadena, las comillas rompen el sh del contenedor.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9099/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    # Margen para que firebase-tools termine de exportar el estado antes de que Docker
+    # lo mate; con el valor por defecto (10 s) una exportación lenta se cortaría.
+    stop_grace_period: 30s
+    networks:
+      - cameia-net
+
+  # ---------------------------------------------------------------------------
   # Compilación y pruebas. No se levanta con 'up': se invoca a demanda.
   #
   #   docker compose run --rm verify
@@ -98,6 +137,7 @@ services:
 
 volumes:
   maven-cache:
+  firebase-emulator-data:
 
 networks:
   cameia-gateway-net:
