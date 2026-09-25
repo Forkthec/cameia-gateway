@@ -1,6 +1,6 @@
 # Numeraciones usadas en `specs/`
 
-- **Actualizado:** 19/09/2026
+- **Actualizado:** 24/09/2026
 - **Para qué existe:** evitar IDs repetidos entre specs. El 15/09/2026 se detectó que `GW-TBD-10` y
   `GW-TBD-11` estaban asignados dos veces, y hubo que renumerar.
 - **Regla:** antes de asignar un ID nuevo de la serie `GW-TBD`, se consulta este archivo y se
@@ -20,12 +20,13 @@
 | `CM-14-verificacion-correo/` | CM-14 (continuación) | 1 |
 | `CM-184-nivel-log-4xx/` | CM-184 | 1 |
 | `CM-190-emulador-firebase-auth/` | CM-190 (subtarea de CM-188) | 1 |
+| `CM-188-correcciones/` | CM-188 (correcciones de CM-189 y CM-190) | 1 |
 
 ---
 
 ## 2. Clarificaciones `GW-TBD` — serie única para todo el repositorio
 
-**Siguiente número libre: `GW-TBD-29`.**
+**Siguiente número libre: `GW-TBD-31`.**
 
 El estado solo se anota donde el spec lo registra; en el resto, el spec es la fuente.
 
@@ -59,6 +60,8 @@ El estado solo se anota donde el spec lo registra; en el resto, el spec es la fu
 | `GW-TBD-26` | CM-14-verificacion-correo | Propagar `email_verified` o rechazar con `403` en el Gateway | ✅ Cerrado: se propaga en `X-User-Email-Verified` |
 | `GW-TBD-27` | CM-184-nivel-log-4xx | Nivel de log de cada estado: `404` en `INFO` y resto de `4xx` en `WARN`, todo `4xx` en `WARN`, o no tocar el código | ✅ Cerrado 19/09/2026: opción 1 (`404` → `INFO`, otros `4xx` → `WARN`, los dos sin traza) |
 | `GW-TBD-28` | CM-190-emulador-firebase-auth | Si `FIREBASE_AUTH_EMULATOR_HOST` aparece en un despliegue, ¿el Gateway falla el arranque o la ignora? | ✅ Cerrado 19/09/2026: falla el arranque (el SDK la lee del entorno por su cuenta, no se puede ignorar) |
+| `GW-TBD-29` | CM-188-correcciones | Variable del emulador en Spring pero no en el entorno del proceso: ¿fallar el arranque o avisar? | ✅ Cerrado 24/09/2026: falla el arranque; el README recomienda Docker |
+| `GW-TBD-30` | CM-188-correcciones | ID de proyecto del emulador tomado de `FIREBASE_PROJECT_ID` y `depends_on` del Gateway sobre el emulador | ✅ Cerrado 24/09/2026: el ID se toma de `FIREBASE_PROJECT_ID`; sin `depends_on` |
 
 ---
 
@@ -73,6 +76,7 @@ El estado solo se anota donde el spec lo registra; en el resto, el spec es la fu
 | CM-14-Registro-usuario | `REQ-REG-01` … `REQ-REG-10`, `REQ-NF-REG-01` … `REQ-NF-REG-02` |
 | CM-14-verificacion-correo | `REQ-VER-01` … `REQ-VER-06`, `REQ-NF-VER-01` … `REQ-NF-VER-02` |
 | CM-184-nivel-log-4xx | `REQ-LOG-01` … `REQ-LOG-05`, `REQ-NF-LOG-01` … `REQ-NF-LOG-02` |
+| CM-188-correcciones | `REQ-EMC-01` … `REQ-EMC-11` (`REQ-EMC-04` retirado), `REQ-NF-EMC-01` … `REQ-NF-EMC-02` |
 
 > `REQ-NN` sin prefijo se repite entre base técnica, correcciones y CM-113. Al citarlos desde otro
 > spec, se nombra el spec. Los specs nuevos usan un prefijo propio (`REQ-OIDC`, `REQ-REG`).
@@ -90,5 +94,6 @@ El estado solo se anota donde el spec lo registra; en el resto, el spec es la fu
 | CM-14-Registro-usuario | `T-00a` … `T-00q`, `T-01` … `T-24` (`T-13` omitida) |
 | CM-14-verificacion-correo | `T-01` … `T-13` |
 | CM-184-nivel-log-4xx | `T-01` … `T-15` |
+| CM-188-correcciones | `T-00` … `T-18`, más `T-14a` (`T-05` retirada) |
 
 > Los `T-NN` se repiten entre specs por diseño: se citan siempre junto al spec.

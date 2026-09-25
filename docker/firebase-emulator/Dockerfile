@@ -20,5 +20,10 @@ COPY firebase.json /app/firebase.json
 RUN mkdir /data && chown -R node:node /data /app
 USER node
 
+# La Emulator UI no viene en el paquete npm: se descarga aquí, en la construcción, y no en cada
+# arranque. Va después de USER node porque se guarda en la caché del usuario que la descarga
+# (~/.cache/firebase); descargada como root, el emulador (que corre como node) no la encuentra.
+RUN firebase setup:emulators:ui
+
 EXPOSE 9099
 ENTRYPOINT ["/app/entrypoint.sh"]

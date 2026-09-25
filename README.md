@@ -62,6 +62,17 @@ Lo escribe cameia-cuentas al activar una suscripción.
 
 **Requisitos:** Docker Desktop. No se necesita JDK ni Maven instalado.
 
+> **Se recomienda firmemente ejecutar el gateway con Docker (`docker compose`) y no desde el IDE o
+> con Maven local.** Con Docker, el compose ya entrega al contenedor las variables que necesita el
+> emulador de Firebase Auth, con los nombres de red correctos. Fuera de Docker hay que configurarlas
+> a mano, y un detalle rompe el arranque:
+>
+> - `FIREBASE_AUTH_EMULATOR_HOST` debe ser una **variable de entorno del sistema operativo** en la
+>   configuración de ejecución. Como propiedad `-D`, argumento `--` o entrada de un YAML, el Admin
+>   SDK de Firebase no la ve y el gateway se niega a arrancar (`specs/CM-188-correcciones/`, `REQ-EMC-09`).
+> - Su valor debe ser `localhost:9099`, no `cameia-firebase-emulator:9099`: ese nombre solo existe
+>   dentro de la red `cameia-net` de Docker.
+
 ### 1. Configurar variables de entorno
 
 ```bash
@@ -84,8 +95,12 @@ docker build -t cameia-gateway .
 ### 4. Arrancar en local
 
 ```bash
-docker run --env-file .env -p 8080:8080 cameia-gateway
+docker network create cameia-net   # una sola vez
+docker compose up --build -d       # gateway y emulador de Firebase Auth
 ```
+
+`docker run --env-file .env` no sirve con el emulador: el contenedor queda fuera de `cameia-net` y
+no resuelve `cameia-firebase-emulator`.
 
 ### 5. Verificar que está vivo
 

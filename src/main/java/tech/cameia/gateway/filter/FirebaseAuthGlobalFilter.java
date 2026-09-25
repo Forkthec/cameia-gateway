@@ -17,11 +17,13 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.stereotype.Component;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.server.ServerWebExchange;
 
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.Set;
@@ -226,28 +228,86 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
             return writeUnauthorized(exchange, "Token de acceso requerido", requestId);
         }
 
-        // El rechazo se captura antes del flatMap: así solo cubre la verificación del token, y un
-        // fallo al reenviar al microservicio nunca se confunde con un token inválido (plan §3.4)
+        return verifyIdToken(exchange, idToken, requestId)
+                .flatMap(decodedToken -> chain.filter(withIdentity(exchange, decodedToken, requestId)));
+    }
+
+    /**
+     * Verifica el ID Token y traduce sus fallos: {@code 401} si el problema es el token, {@code 503}
+     * si el servidor de Firebase Auth no respondió (CM-188 REQ-EMC-01, REQ-EMC-02).
+     *
+     * <p>Los fallos se capturan aquí y no después del {@code flatMap} de {@code filter}: así solo
+     * cubren la verificación, y un fallo al reenviar al microservicio nunca se confunde con un token
+     * inválido (plan §3.4 de CM-104-correcciones).
+     *
+     * @param exchange  intercambio HTTP de la solicitud entrante
+     * @param idToken   ID Token de Firebase sin verificar
+     * @param requestId identificador de trazabilidad ya resuelto
+     * @return el token verificado; vacío si ya se escribió el {@code 401}; o un error {@code 503}
+     */
+    private Mono<FirebaseToken> verifyIdToken(ServerWebExchange exchange, String idToken, String requestId) {
         return Mono.fromCallable(() -> firebaseAuth.verifyIdToken(idToken, true))
                 .subscribeOn(Schedulers.boundedElastic())
+                .onErrorResume(this::isAuthServerUnreachable, e -> authServerUnavailable(requestId, e))
                 // tras escribir el 401 se completa vacío: el flatMap no corre y nada se reenvía
                 .onErrorResume(this::isTokenRejection,
                         e -> writeUnauthorized(exchange, "Token de acceso inválido", requestId)
-                                .then(Mono.<FirebaseToken>empty()))
-                .flatMap(decodedToken -> chain.filter(withIdentity(exchange, decodedToken, requestId)));
+                                .then(Mono.<FirebaseToken>empty()));
     }
 
     /**
      * Decide si un fallo de la verificación es culpa del token y merece {@code 401} (REQ-02).
      *
-     * <p>No abarca {@link Throwable} en bruto: un fallo de red al descargar las claves públicas de
-     * Firebase es un problema del Gateway, no del cliente, y debe seguir llegando al manejador global.
+     * <p>No abarca {@link Throwable} en bruto ni toda {@link FirebaseAuthException}: la que se debe a
+     * un fallo de red es un problema del Gateway, no del cliente (CM-188 REQ-EMC-02).
      *
      * @param error excepción lanzada al verificar el ID Token
-     * @return {@code true} si es {@link FirebaseAuthException} o {@link IllegalArgumentException}
+     * @return {@code true} si es {@link IllegalArgumentException}, o {@link FirebaseAuthException}
+     *         que no se debe a un fallo de red
      */
     private boolean isTokenRejection(Throwable error) {
-        return error instanceof FirebaseAuthException || error instanceof IllegalArgumentException;
+        return error instanceof IllegalArgumentException
+                || (error instanceof FirebaseAuthException && !isAuthServerUnreachable(error));
+    }
+
+    /**
+     * Decide si la verificación falló porque el servidor de Firebase Auth (real o emulador) no se pudo
+     * contactar (CM-188 REQ-EMC-01).
+     *
+     * <p>El Admin SDK envuelve todo fallo de red en una {@link FirebaseAuthException} cuya cadena de
+     * causas contiene una {@link IOException}; un rechazo del token no trae causa. El {@code ErrorCode}
+     * no sirve para distinguirlos: vale {@code UNAVAILABLE} o {@code UNKNOWN} según el fallo (plan
+     * §1.1 de CM-188).
+     *
+     * @param error excepción lanzada al verificar el ID Token
+     * @return {@code true} si es {@link FirebaseAuthException} con una {@link IOException} en su cadena
+     */
+    private boolean isAuthServerUnreachable(Throwable error) {
+        if (!(error instanceof FirebaseAuthException)) {
+            return false;
+        }
+        for (Throwable cause = error.getCause(); cause != null; cause = cause.getCause()) {
+            if (cause instanceof IOException) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Falla cerrado cuando el servidor de Firebase Auth no respondió (CM-188 REQ-EMC-01, REQ-EMC-03).
+     *
+     * <p>La causa va al log con su {@code X-Request-Id}; al cliente solo le llega el {@code 503} del
+     * catálogo de {@code GlobalErrorHandler}. La excepción va <b>sin reason</b>: cualquier texto
+     * podría acabar en la respuesta. Nada se reenvía al microservicio.
+     *
+     * @param requestId identificador de trazabilidad ya resuelto
+     * @param error     fallo de red devuelto por el Admin SDK
+     * @return un error {@code 503}
+     */
+    private Mono<FirebaseToken> authServerUnavailable(String requestId, Throwable error) {
+        log.error("El servidor de Firebase Auth no respondió al verificar el token [requestId={}]", requestId, error);
+        return Mono.error(new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE));
     }
 
     /**
