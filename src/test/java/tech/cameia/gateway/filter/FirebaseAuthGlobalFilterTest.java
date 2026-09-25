@@ -1,5 +1,7 @@
 package tech.cameia.gateway.filter;
 
+import com.google.firebase.ErrorCode;
+import com.google.firebase.auth.AuthErrorCode;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
 import com.google.firebase.auth.FirebaseToken;
@@ -32,6 +34,8 @@ import org.springframework.test.web.reactive.server.EntityExchangeResult;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
 import java.io.IOException;
+import java.net.ConnectException;
+import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -390,6 +394,77 @@ class FirebaseAuthGlobalFilterTest {
                 .header("Authorization", "Bearer token-sin-red")
                 .exchange()
                 .expectStatus().isEqualTo(500);
+    }
+
+    // ── Caso 4g: el servidor de Firebase Auth no responde (CM-188 REQ-EMC-01) ─
+
+    /**
+     * CM-188 REQ-EMC-01 y REQ-EMC-03: si el servidor de Firebase Auth (real o emulador) no se puede
+     * contactar, el cliente recibe {@code 503 SERVICE_UNAVAILABLE} y no {@code 401}, nada llega al
+     * microservicio, el fallo queda en el log con su {@code X-Request-Id} y el detalle de la
+     * excepción no sale en la respuesta.
+     *
+     * <p>La excepción reproduce la forma real que devuelve {@code firebase-admin} 9.10.0 cuando el
+     * host del emulador no resuelve (plan §1.1 de CM-188).
+     *
+     * @param output salida de consola capturada durante la prueba
+     */
+    @Test
+    void authServerUnreachable_returns503WithoutReachingDownstream(CapturedOutput output) throws Exception {
+        int requestsBefore = mockDownstream.getRequestCount();
+        when(firebaseAuth.verifyIdToken("token-emulador-caido", true)).thenThrow(networkFailure(
+                ErrorCode.UNAVAILABLE, new UnknownHostException("cameia-firebase-emulator")));
+
+        webTestClient.get()
+                .uri("/api/v1/profiles/me")
+                .header("Authorization", "Bearer token-emulador-caido")
+                .header("X-Request-Id", "req-auth-caido")
+                .exchange()
+                .expectStatus().isEqualTo(503)
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("SERVICE_UNAVAILABLE")
+                .jsonPath("$.message").value(message ->
+                        assertThat(message.toString()).doesNotContain("cameia-firebase-emulator"));
+
+        assertThat(mockDownstream.getRequestCount()).isEqualTo(requestsBefore);
+        assertThat(output.getOut()).contains(
+                "El servidor de Firebase Auth no respondió al verificar el token [requestId=req-auth-caido]");
+    }
+
+    /**
+     * CM-188 REQ-EMC-01: la conexión rechazada llega con otro {@code ErrorCode} ({@code UNKNOWN}) y
+     * también es {@code 503}: el criterio es la {@link IOException} de la cadena, no el código.
+     */
+    @Test
+    void authServerConnectionRefused_returns503() throws Exception {
+        when(firebaseAuth.verifyIdToken("token-puerto-cerrado", true)).thenThrow(networkFailure(
+                ErrorCode.UNKNOWN, new ConnectException("Connection refused")));
+
+        webTestClient.get()
+                .uri("/api/v1/profiles/me")
+                .header("Authorization", "Bearer token-puerto-cerrado")
+                .exchange()
+                .expectStatus().isEqualTo(503)
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("SERVICE_UNAVAILABLE");
+    }
+
+    /**
+     * CM-188 REQ-EMC-02: una {@link FirebaseAuthException} real sin causa de red, como la de un
+     * usuario que ya no existe en el emulador, sigue siendo un rechazo del token y responde {@code 401}.
+     */
+    @Test
+    void firebaseAuthExceptionWithoutNetworkCause_returns401() throws Exception {
+        when(firebaseAuth.verifyIdToken("token-usuario-borrado", true)).thenThrow(new FirebaseAuthException(
+                ErrorCode.NOT_FOUND, "No user record found", null, null, AuthErrorCode.USER_NOT_FOUND));
+
+        webTestClient.get()
+                .uri("/api/v1/profiles/me")
+                .header("Authorization", "Bearer token-usuario-borrado")
+                .exchange()
+                .expectStatus().isUnauthorized()
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("AUTH_REQUIRED");
     }
 
     // ── Caso 4f: el 401 devuelve el X-Request-Id (REQ-09, T-24a) ─────────────
@@ -791,5 +866,18 @@ class FirebaseAuthGlobalFilterTest {
         when(token.getUid()).thenReturn(uid);
         when(token.getClaims()).thenReturn(claims);
         return token;
+    }
+
+    /**
+     * Fallo de red tal como lo entrega el Admin SDK: una {@link FirebaseAuthException} que envuelve
+     * una {@link IOException}, que a su vez envuelve la causa de red (plan §1.1 de CM-188).
+     *
+     * @param errorCode código que trae el SDK para ese fallo
+     * @param rootCause excepción de red original
+     * @return la excepción que lanzaría {@code verifyIdToken}
+     */
+    private FirebaseAuthException networkFailure(ErrorCode errorCode, Exception rootCause) {
+        return new FirebaseAuthException(errorCode, "Failed to establish a connection",
+                new IOException("Unknown exception in request", rootCause), null, null);
     }
 }

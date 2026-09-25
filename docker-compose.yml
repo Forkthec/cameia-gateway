@@ -76,8 +76,9 @@ services:
   #
   # - El puerto se publica solo en 127.0.0.1: el emulador no tiene autenticación y no debe
   #   quedar expuesto a otros equipos de la red.
-  # - Su ID de proyecto tiene variable propia y NO se toma de FIREBASE_PROJECT_ID, para que
-  #   nunca arranque con el ID de un proyecto real. Debe empezar por "demo-".
+  # - Su ID de proyecto sigue a FIREBASE_PROJECT_ID cuando éste empieza por "demo-", para que el
+  #   Gateway y el emulador cambien juntos (CM-188 REQ-EMC-07). FIREBASE_EMULATOR_PROJECT_ID lo
+  #   fuerza si hace falta. Un ID real nunca llega al emulador: usa demo-cameia (entrypoint.sh).
   # - Guarda los usuarios en el volumen firebase-emulator-data al apagarse de forma ordenada
   #   (docker compose stop/down) y los recupera al arrancar. 'docker compose down -v' los borra.
   # - Emite tokens sin firma: sirve únicamente para desarrollo local.
@@ -88,7 +89,9 @@ services:
     image: cameia-firebase-emulator:local
     container_name: cameia-firebase-emulator
     environment:
-      FIREBASE_EMULATOR_PROJECT_ID: ${FIREBASE_EMULATOR_PROJECT_ID:-demo-cameia}
+      # Sin valor a propósito: Compose las pasa solo si están definidas, y entrypoint.sh decide.
+      FIREBASE_EMULATOR_PROJECT_ID:
+      FIREBASE_PROJECT_ID:
     ports:
       - "127.0.0.1:${FIREBASE_EMULATOR_PORT:-9099}:9099"
       # Emulator UI (http://localhost:4000). Mismo criterio: solo 127.0.0.1, porque no tiene

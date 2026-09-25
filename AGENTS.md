@@ -123,8 +123,8 @@ exception      independiente
 | Clase | Paquete | Qué hace |
 |---|---|---|
 | `GatewayApplication` | raíz | `@SpringBootApplication`, punto de entrada |
-| `FirebaseConfig` | `config` | Inicializa `FirebaseApp` en `@PostConstruct`; falla en arranque si las credenciales son inválidas (fail-fast). Con `FIREBASE_AUTH_EMULATOR_HOST` con valor y fuera de un despliegue usa credenciales ficticias (emulador de Firebase Auth) en vez de las de Google. Con esa variable definida —aunque esté vacía— y `K_SERVICE` o el perfil `prod`, **falla el arranque**: el emulador emite tokens sin firma y el SDK los aceptaría (`specs/CM-190-emulador-firebase-auth/`) |
-| `FirebaseAuthGlobalFilter` | `filter` | Resuelve `X-Request-Id` y lo devuelve en la respuesta. Caso A: valida el Bearer token (`401` si falta, está vacío o Firebase lo rechaza), borra los `X-User-*` del cliente, emite `X-User-Id`, `X-User-Email`, `X-User-Roles`, `X-User-Plan` y `X-User-Email-Verified` con `set` y elimina `Authorization`. Caso B, por método y ruta exactos (`PUBLIC_ROUTES`, y `DEV_PUBLIC_ROUTES` solo con el perfil `local`): borra los `X-User-*` y el `Authorization` del cliente. Falla el arranque si `local` está activo con `K_SERVICE` definida |
+| `FirebaseConfig` | `config` | Inicializa `FirebaseApp` en `@PostConstruct`; falla en arranque si las credenciales son inválidas (fail-fast). Con `FIREBASE_AUTH_EMULATOR_HOST` con valor y fuera de un despliegue usa credenciales ficticias (emulador de Firebase Auth) en vez de las de Google. Con esa variable definida —aunque esté vacía— y `K_SERVICE` o el perfil `prod`, **falla el arranque**: el emulador emite tokens sin firma y el SDK los aceptaría (`specs/CM-190-emulador-firebase-auth/`). El modo emulador se decide con la variable de entorno del proceso (la fuente `systemEnvironment`), que es lo único que lee el SDK: si la variable solo está como `-D`, argumento o YAML, o con otro valor, falla el arranque; y con el emulador, `FIREBASE_PROJECT_ID` debe empezar por `demo-` (`specs/CM-188-correcciones/`) |
+| `FirebaseAuthGlobalFilter` | `filter` | Resuelve `X-Request-Id` y lo devuelve en la respuesta. Caso A: valida el Bearer token (`401` si falta, está vacío o Firebase lo rechaza; `503` si el servidor de Firebase Auth, real o emulador, no responde, detectado por una `IOException` en la cadena de causas, CM-188), borra los `X-User-*` del cliente, emite `X-User-Id`, `X-User-Email`, `X-User-Roles`, `X-User-Plan` y `X-User-Email-Verified` con `set` y elimina `Authorization`. Caso B, por método y ruta exactos (`PUBLIC_ROUTES`, y `DEV_PUBLIC_ROUTES` solo con el perfil `local`): borra los `X-User-*` y el `Authorization` del cliente. Falla el arranque si `local` está activo con `K_SERVICE` definida |
 | `GlobalErrorHandler` | `exception` | Formatea el error como `{"code":"...","message":"..."}` desde un catálogo cerrado (`AUTH_REQUIRED`, `NOT_FOUND`, `BAD_GATEWAY`, `SERVICE_UNAVAILABLE`, `GATEWAY_TIMEOUT`, `INTERNAL_ERROR`). Nunca copia el mensaje de la excepción: la registra en el log con su `X-Request-Id`. El nivel depende del estado: 5xx `ERROR` con traza; 404 `INFO` y otros 4xx `WARN`, ambos sin traza (CM-184) |
 | `OidcConfig` | `config` | Con `gateway.oidc.signing-enabled=true` crea `GoogleIdTokenSource` y `OidcSigningGlobalFilter`; con `false` no crea ningún bean. La fuente real se apaga en pruebas con `gateway.oidc.google-credentials.enabled=false` |
 | `OidcRequiredInProd` | `config` | Con el perfil `prod`, falla el arranque si la firma OIDC está apagada |
@@ -293,7 +293,7 @@ Cómo ejecutar sin instalar Java ni Maven:
 docker compose run --rm verify
 ```
 
-Resultado esperado: `BUILD SUCCESS`. Hoy son 79 pruebas; el número sube a medida que se cubran las brechas de §6.5, y ninguna existente debe ponerse roja al hacerlo.
+Resultado esperado: `BUILD SUCCESS`. Hoy son 100 pruebas; el número sube a medida que se cubran las brechas de §6.5, y ninguna existente debe ponerse roja al hacerlo.
 
 ---
 
@@ -310,8 +310,8 @@ docker compose up --build -d              # arranca el gateway
 
 | Variable | Descripción |
 |---|---|
-| `FIREBASE_PROJECT_ID` | ID del proyecto. Con el emulador, `demo-cameia`; con un proyecto real, el ID de Firebase Console |
-| `FIREBASE_AUTH_EMULATOR_HOST` | Camino por defecto en local: dirección del emulador de Firebase Auth, `cameia-firebase-emulator:9099`. Sustituye a la llave. **Nunca en un despliegue**: el gateway no arranca si la ve junto a `K_SERVICE` o al perfil `prod` |
+| `FIREBASE_PROJECT_ID` | ID del proyecto. Con el emulador debe empezar por `demo-` (por defecto `demo-cameia`) y el emulador toma el mismo valor; con un proyecto real, el ID de Firebase Console |
+| `FIREBASE_AUTH_EMULATOR_HOST` | Camino por defecto en local: dirección del emulador de Firebase Auth, `cameia-firebase-emulator:9099` (`localhost:9099` fuera de Docker, siempre como variable de entorno y no como `-D`). Sustituye a la llave. **Nunca en un despliegue**: el gateway no arranca si la ve junto a `K_SERVICE` o al perfil `prod` |
 | `FIREBASE_KEY_PATH` | Solo sin emulador: ruta absoluta al JSON de service account (nunca en el repo) |
 
 ### Variables con default razonable

@@ -23,6 +23,22 @@ La hipótesis a confirmar es: `FirebaseAuthException` cuya cadena de causas cont
 `IOException` (`ConnectException`, `UnknownHostException`, `SocketTimeoutException`). **El diseño
 de 1.2 se ajusta al resultado**; no se escribe código con la hipótesis sin confirmar.
 
+**Resultado (24/09/2026, T-01).** Programa Java con `firebase-admin` 9.10.0 y el classpath real del
+proyecto, en `maven:3.9-eclipse-temurin-21`, con `verifyIdToken(token, false)` y `(token, true)`:
+
+| Escenario | `ErrorCode` / `AuthErrorCode` | Cadena de causas |
+|---|---|---|
+| Emulador, host sin DNS (`--network none`) | `UNAVAILABLE` / `null` | `FirebaseAuthException` → `IOException` → `ExecutionException` → `UnknownHostException` |
+| Emulador, puerto cerrado (`localhost:1`) | `UNKNOWN` / `null` | `FirebaseAuthException` → `IOException` → `HttpHostConnectException` (subclase de `ConnectException`) |
+| Modo real sin red, token con `kid` | `UNKNOWN` / `CERTIFICATE_FETCH_FAILED` | `FirebaseAuthException` → `IOException` → `ExecutionException` → `UnknownHostException` |
+| Emulador vivo, usuario inexistente | `NOT_FOUND` / `USER_NOT_FOUND` | Sin causa |
+| Modo real, token sin `kid` | `INVALID_ARGUMENT` / `INVALID_ID_TOKEN` | Sin causa |
+
+Hipótesis confirmada: todo fallo de red trae una `java.io.IOException` en la cadena y ningún rechazo
+del token la trae. El criterio de 1.2 es "hay una `IOException` en la cadena", no el `ErrorCode`, que
+varía (`UNAVAILABLE` o `UNKNOWN`). Además, en modo emulador el SDK consulta al emulador **también con
+`checkRevoked=false`**: sin emulador, ningún token se verifica.
+
 ### 1.2 Clasificación en el filtro
 
 `isTokenRejection(Throwable)` pasa a devolver `true` solo si el error es `IllegalArgumentException`,
@@ -31,8 +47,9 @@ privado `isAuthServerUnreachable(Throwable)` que recorre las causas (mismo patr�
 `GlobalErrorHandler.resolveStatus`, sin importarlo: `filter` no importa `exception`).
 
 - Rechazo del token → `401` como hoy (`REQ-EMC-02`).
-- Servidor inalcanzable → el filtro registra `WARN` con el `X-Request-Id` ("el servidor de Firebase
-  Auth no respondió") y devuelve `Mono.error(new ResponseStatusException(SERVICE_UNAVAILABLE))`
+- Servidor inalcanzable → el filtro registra `ERROR` con la causa y el `X-Request-Id` ("el servidor
+  de Firebase Auth no respondió"), como `failClosed` de `OidcSigningGlobalFilter` (es un fallo del
+  servidor, no del cliente), y devuelve `Mono.error(new ResponseStatusException(SERVICE_UNAVAILABLE))`
   **sin reason**, igual que `OidcSigningGlobalFilter` (`REQ-EMC-01`, `REQ-EMC-03`). El
   `GlobalErrorHandler` ya traduce eso a `{"code":"SERVICE_UNAVAILABLE",...}` sin filtrar detalle.
 - En ambos casos el `flatMap` no corre y nada llega al downstream.
@@ -69,22 +86,28 @@ queda cubierto por 1.2: mientras el emulador no responde, el Gateway da `503` y 
 ## 3. Problema 4 — de dónde se lee la variable (`REQ-EMC-08` a `REQ-EMC-10`)
 
 CM-190 eligió el `Environment` de Spring por comodidad de las pruebas (su plan §1). Se conserva la
-capacidad de probar sin tocar el entorno del proceso con un **punto de sustitución**, igual que
-`defaultCredentials()`:
+capacidad de probar sin tocar el entorno del proceso leyendo la fuente **`systemEnvironment`** del
+`ConfigurableEnvironment`, que en ejecución envuelve `System.getenv()`:
 
 ```java
-/** Variable de entorno del proceso: la única fuente que lee el Admin SDK. */
-String processVariable(String name) {
-    return System.getenv(name);
-}
+private String processVariable(String name)  // mapa en bruto de "systemEnvironment", nombre exacto
 ```
+
+> **Cambio respecto a la primera versión del plan (24/09/2026).** Se proponía un método sustituible
+> que devolviera `System.getenv(name)`. Servía para `FirebaseConfigTest`, pero no para
+> `FirebaseEmulatorStartupTest`, que arranca el contexto real: su caso positivo pasa la variable como
+> argumento `--`, lo que ahora falla por `REQ-EMC-09`, y no hay forma limpia de fijar una variable de
+> entorno en la JVM de la prueba. Con la fuente `systemEnvironment`, la prueba la sustituye con
+> `SpringApplication.setEnvironment` y el caso positivo se conserva. Se lee el mapa en bruto, con el
+> nombre exacto, porque la búsqueda de Spring es flexible con mayúsculas y separadores y el SDK no.
+> El constructor pasa de `Environment` a `ConfigurableEnvironment`, que Spring inyecta igual.
 
 - **Modo emulador** = `processVariable(EMULATOR_HOST_VARIABLE)` con valor no vacío (`REQ-EMC-08`).
   `resolveCredentials()` y `rejectNonDemoProjectInEmulator()` usan este criterio.
 - **Guardia de despliegue** (`REQ-EMC-10`): la variable cuenta como presente si
   `environment.containsProperty(...)` **o** `processVariable(...) != null`.
-- **Desajuste** (`REQ-EMC-09`): si `environment.getProperty(...)` tiene valor y
-  `processVariable(...)` es `null` o vacía, `IllegalStateException` explicando que el SDK solo lee
+- **Desajuste** (`REQ-EMC-09`): si `environment.getProperty(...)` tiene valor y no es igual a
+  `processVariable(...)` (ausente, vacía u otra), `IllegalStateException` explicando que el SDK solo lee
   la variable de entorno del proceso y cómo definirla en el IDE.
 
 Orden en `init()`: despliegue → desajuste → proyecto `demo-` → credenciales.

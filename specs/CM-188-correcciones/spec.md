@@ -142,9 +142,12 @@ de Spring.
 
 ```
 Si FIREBASE_AUTH_EMULATOR_HOST está en el Environment de Spring con valor y no está en las variables
-de entorno del proceso, entonces el sistema no debe arrancar, y el mensaje de error debe explicar
-que el Admin SDK solo lee la variable de entorno del proceso.
+de entorno del proceso, o está allí con otro valor, entonces el sistema no debe arrancar, y el
+mensaje de error debe explicar que el Admin SDK solo lee la variable de entorno del proceso.
 ```
+
+> "Con otro valor" se añadió en la implementación (24/09/2026, Fase 7): un `-D` que sobrescribe la
+> variable de entorno deja a Spring y al SDK apuntando a hosts distintos, el mismo problema.
 
 > Decidido en `GW-TBD-29`: fallar el arranque. El camino recomendado es Docker, donde el compose
 > entrega la variable como variable de entorno y este caso no ocurre (`REQ-EMC-11`).

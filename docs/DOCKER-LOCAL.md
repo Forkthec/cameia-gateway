@@ -48,6 +48,13 @@ Con la variable `FIREBASE_AUTH_EMULATOR_HOST` definida, el gateway arranca sin l
 tokens del emulador. **Esos tokens no van firmados**, por eso el gateway se niega a arrancar si
 esa variable aparece en un despliegue (Cloud Run o perfil `prod`), aunque esté vacía.
 
+**Un solo ID de proyecto.** Con el emulador, `FIREBASE_PROJECT_ID` debe empezar por `demo-`: si no,
+el gateway se niega a arrancar, porque el emulador nunca emitiría tokens para otro proyecto. El
+emulador toma ese mismo valor por su cuenta, así que para cambiar de ID basta con editar
+`FIREBASE_PROJECT_ID`. `cameia-cuentas` debe usar **el mismo ID y el mismo emulador**; si no, crea
+usuarios en un proyecto y el gateway los valida contra otro. El ID que usa cada uno sale en su log
+de arranque: `docker compose logs firebase-emulator app | grep -i proyecto`.
+
 Para usar un **proyecto real** de Firebase en su lugar, comenta la línea de
 `FIREBASE_AUTH_EMULATOR_HOST` y completa:
 
@@ -112,9 +119,15 @@ curl http://localhost:9099/
 |---|---|
 | Tu equipo (navegador, `curl`) | `http://localhost:9099` |
 | Otro contenedor de `cameia-net` | `http://cameia-firebase-emulator:9099` |
-| ID de proyecto | `demo-cameia` (variable `FIREBASE_EMULATOR_PROJECT_ID`, debe empezar por `demo-`) |
+| Emulator UI (usuarios, claims, correo verificado) | `http://localhost:4000/auth` |
+| ID de proyecto | El de `FIREBASE_PROJECT_ID` si empieza por `demo-`; si no, `demo-cameia`. `FIREBASE_EMULATOR_PROJECT_ID` lo fuerza (también debe empezar por `demo-`) |
 
-El puerto se publica solo en `127.0.0.1`: otros equipos de la red no pueden llegar al emulador.
+Los puertos se publican solo en `127.0.0.1`: otros equipos de la red no pueden llegar al emulador.
+
+**Si el emulador no responde**, las rutas protegidas del gateway responden `503 SERVICE_UNAVAILABLE`
+y no `401`: el problema no es tu token. El log del gateway lo dice con
+`El servidor de Firebase Auth no respondió al verificar el token`. El gateway no espera al
+emulador al arrancar, así que los primeros segundos tras `docker compose up` pueden dar `503`.
 
 ### Qué se guarda y qué no
 
@@ -122,6 +135,11 @@ Los usuarios se guardan en el volumen `firebase-emulator-data` **al apagar de fo
 (`docker compose stop` o `docker compose down`) y se recuperan al volver a arrancar. Un apagado
 brusco (`docker kill`, cerrar Docker a la fuerza, un corte de luz) **no guarda nada**: se pierde
 lo creado desde el último apagado ordenado.
+
+**Tras reiniciar el emulador hay que volver a iniciar sesión.** Al importar los usuarios, el
+emulador mueve su `validSince` al momento del arranque, y el gateway comprueba la revocación del
+token: todo token emitido antes del reinicio responde `401`. Pide un token nuevo con
+`accounts:signInWithPassword` (o vuelve a iniciar sesión en el front-end). Comprobado el 24/09/2026.
 
 Si al apagar no estás seguro de que se guardó, busca `Export complete` en
 `docker compose logs firebase-emulator`. Un fallo al exportar aparece ahí como `Export failed`,
@@ -143,6 +161,13 @@ borras la base de un servicio con `docker compose down -v` en su repositorio, el
 conserva el usuario y ese correo ya no se puede volver a registrar. Al revés, si vacías el
 emulador y la base conserva sus filas, esos usuarios ya no pueden iniciar sesión.
 
+> ⚠️ **Los usuarios del emulador y los de `cameia-cuentas` se desincronizan con facilidad**
+> (advertencia 1 de `specs/CM-188-correcciones/spec.md`). Un apagado brusco pierde en el emulador
+> los usuarios que la base de Cuentas sí conserva; `docker compose down -v` en un repositorio no
+> toca los volúmenes del otro; y el emulador genera `uid` aleatorios, así que ningún dato semilla
+> con `uid` fijos coincidirá. El síntoma es un `401` para un usuario que Cuentas sí tiene. Regla
+> práctica: **si reinicias uno de los dos, reinicia el otro.**
+
 ### Diferencias con Firebase real
 
 - **Los tokens no van firmados** (`alg: none`): el emulador sirve solo para desarrollo local y
@@ -155,6 +180,19 @@ emulador y la base conserva sus filas, esos usuarios ya no pueden iniciar sesió
   documentación de Firebase, un proyecto real con la protección contra enumeración de correos
   activa devuelve `auth/invalid-credential` en ambos casos. No se ha comparado contra el
   proyecto real: si tu código distingue esos códigos, pruébalo también en staging.
+
+### Arrancar el gateway fuera de Docker (no recomendado)
+
+> ⚠️ Advertencia 2 de `specs/CM-188-correcciones/spec.md`. Se recomienda `docker compose`: el
+> compose ya entrega todo con los valores correctos.
+
+Si aun así lo arrancas desde el IDE o con Maven local:
+
+- `FIREBASE_AUTH_EMULATOR_HOST` debe ser `localhost:9099`: `cameia-firebase-emulator` solo se
+  resuelve dentro de `cameia-net`.
+- Debe definirse como **variable de entorno** de la configuración de ejecución. Como `-D`,
+  argumento `--` o entrada de un YAML, el Admin SDK de Firebase no la ve y el gateway se niega a
+  arrancar con un mensaje que lo explica.
 
 ---
 
@@ -228,6 +266,7 @@ Resultado esperado: `BUILD SUCCESS` con 10 pruebas en verde.
 |----------|-----------------|-------------|
 | cameia-gateway | 8080 | Punto de entrada HTTP — úsalo para todas las llamadas |
 | firebase-emulator | 9099 | Emulador de Firebase Auth — solo accesible desde tu equipo (`127.0.0.1`) |
+| firebase-emulator | 4000 | Emulator UI — solo accesible desde tu equipo (`127.0.0.1`) |
 | cameia-perfil db | 5432 | PostgreSQL — solo para inspección con un cliente de BD |
 
 cameia-perfil no expone el puerto 8082 al front-end; solo es accesible a través del gateway.
