@@ -91,6 +91,9 @@ services:
       FIREBASE_EMULATOR_PROJECT_ID: ${FIREBASE_EMULATOR_PROJECT_ID:-demo-cameia}
     ports:
       - "127.0.0.1:${FIREBASE_EMULATOR_PORT:-9099}:9099"
+      # Emulator UI (http://localhost:4000). Mismo criterio: solo 127.0.0.1, porque no tiene
+      # autenticación. El navegador habla directamente con el emulador en localhost:9099.
+      - "127.0.0.1:4000:4000"
     volumes:
       - firebase-emulator-data:/data
     healthcheck:
