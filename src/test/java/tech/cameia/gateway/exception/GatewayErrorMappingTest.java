@@ -220,7 +220,7 @@ class GatewayErrorMappingTest {
         FirebaseToken token = mock(FirebaseToken.class);
         when(token.getUid()).thenReturn("uid-" + idToken);
         when(token.getClaims()).thenReturn(Map.of());
-        when(firebaseAuth.verifyIdToken(idToken, true)).thenReturn(token);
+        when(firebaseAuth.verifyIdToken(idToken)).thenReturn(token);
 
         slowDownstream.enqueue(new MockResponse().setResponseCode(200).setBody("tarde")
                 .setHeadersDelay(2, TimeUnit.SECONDS));

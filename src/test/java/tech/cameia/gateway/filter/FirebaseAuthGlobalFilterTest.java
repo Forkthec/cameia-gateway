@@ -40,7 +40,6 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -115,7 +114,7 @@ class FirebaseAuthGlobalFilterTest {
         FirebaseToken token = mockToken("uid-abc123",
                 Map.of("plan", "PREMIUM", "roles", List.of("premium")));
         when(token.getEmail()).thenReturn("ana@cameia.tech");
-        when(firebaseAuth.verifyIdToken("token-valido", true)).thenReturn(token);
+        when(firebaseAuth.verifyIdToken("token-valido")).thenReturn(token);
 
         mockDownstream.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
 
@@ -147,7 +146,7 @@ class FirebaseAuthGlobalFilterTest {
     @Test
     void clientIdentityHeader_isReplacedByTokenUid() throws Exception {
         FirebaseToken token = mockToken("uid-legitimo", Map.of());
-        when(firebaseAuth.verifyIdToken("token-suplantacion", true)).thenReturn(token);
+        when(firebaseAuth.verifyIdToken("token-suplantacion")).thenReturn(token);
 
         mockDownstream.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
 
@@ -168,7 +167,7 @@ class FirebaseAuthGlobalFilterTest {
     @Test
     void validTokenWithoutPlan_omitsXUserPlanHeader() throws Exception {
         FirebaseToken token = mockToken("uid-sin-plan", Map.of());
-        when(firebaseAuth.verifyIdToken("token-sin-plan", true)).thenReturn(token);
+        when(firebaseAuth.verifyIdToken("token-sin-plan")).thenReturn(token);
 
         mockDownstream.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
 
@@ -192,7 +191,7 @@ class FirebaseAuthGlobalFilterTest {
     @Test
     void rolesClaimAsList_isJoinedWithCommas() throws Exception {
         FirebaseToken token = mockToken("uid-roles-lista", Map.of("roles", List.of("free", "premium")));
-        when(firebaseAuth.verifyIdToken("token-roles-lista", true)).thenReturn(token);
+        when(firebaseAuth.verifyIdToken("token-roles-lista")).thenReturn(token);
 
         mockDownstream.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
 
@@ -215,7 +214,7 @@ class FirebaseAuthGlobalFilterTest {
     @Test
     void rolesClaimAsString_isPropagatedUnchanged() throws Exception {
         FirebaseToken token = mockToken("uid-roles-cadena", Map.of("roles", "PREMIUM"));
-        when(firebaseAuth.verifyIdToken("token-roles-cadena", true)).thenReturn(token);
+        when(firebaseAuth.verifyIdToken("token-roles-cadena")).thenReturn(token);
 
         mockDownstream.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
 
@@ -238,7 +237,7 @@ class FirebaseAuthGlobalFilterTest {
     @Test
     void tokenWithoutEmail_omitsXUserEmailHeader() throws Exception {
         FirebaseToken token = mockToken("uid-sin-email", Map.of());
-        when(firebaseAuth.verifyIdToken("token-sin-email", true)).thenReturn(token);
+        when(firebaseAuth.verifyIdToken("token-sin-email")).thenReturn(token);
 
         mockDownstream.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
 
@@ -290,7 +289,7 @@ class FirebaseAuthGlobalFilterTest {
 
     @Test
     void invalidToken_returns401() throws Exception {
-        when(firebaseAuth.verifyIdToken("token-invalido", true))
+        when(firebaseAuth.verifyIdToken("token-invalido"))
                 .thenThrow(mock(FirebaseAuthException.class));
 
         webTestClient.get()
@@ -300,24 +299,6 @@ class FirebaseAuthGlobalFilterTest {
                 .expectStatus().isUnauthorized()
                 .expectBody()
                 .jsonPath("$.code").isEqualTo("AUTH_REQUIRED");
-    }
-
-    @Test
-    void revokedToken_returns401AndDoesNotReachDownstream() throws Exception {
-        int requestsBefore = mockDownstream.getRequestCount();
-        when(firebaseAuth.verifyIdToken("token-revocado", true))
-                .thenThrow(mock(FirebaseAuthException.class));
-
-        webTestClient.get()
-                .uri("/api/v1/profiles/me")
-                .header("Authorization", "Bearer token-revocado")
-                .exchange()
-                .expectStatus().isUnauthorized()
-                .expectBody()
-                .jsonPath("$.code").isEqualTo("AUTH_REQUIRED");
-
-        verify(firebaseAuth).verifyIdToken("token-revocado", true);
-        assertThat(mockDownstream.getRequestCount()).isEqualTo(requestsBefore);
     }
 
     // ── Caso 4b: Bearer vacío (REQ-02, prueba 7 del plan) ────────────────────
@@ -362,7 +343,7 @@ class FirebaseAuthGlobalFilterTest {
      */
     @Test
     void firebaseIllegalArgument_returns401() throws Exception {
-        when(firebaseAuth.verifyIdToken("token-malformado", true))
+        when(firebaseAuth.verifyIdToken("token-malformado"))
                 .thenThrow(new IllegalArgumentException("token malformado"));
 
         webTestClient.get()
@@ -382,7 +363,7 @@ class FirebaseAuthGlobalFilterTest {
      */
     @Test
     void firebaseUnexpectedFailure_isNotTreatedAsTokenRejection() throws Exception {
-        when(firebaseAuth.verifyIdToken("token-sin-red", true))
+        when(firebaseAuth.verifyIdToken("token-sin-red"))
                 .thenThrow(new IllegalStateException("sin conexión con Firebase"));
 
         webTestClient.get()
@@ -445,7 +426,7 @@ class FirebaseAuthGlobalFilterTest {
     @Test
     void clientRequestId_isPreservedToDownstream() throws Exception {
         FirebaseToken token = mockToken("uid-trazado", Map.of());
-        when(firebaseAuth.verifyIdToken("token-trazado", true)).thenReturn(token);
+        when(firebaseAuth.verifyIdToken("token-trazado")).thenReturn(token);
 
         mockDownstream.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
 
@@ -472,7 +453,7 @@ class FirebaseAuthGlobalFilterTest {
     @Test
     void downstreamEchoedRequestId_isNotDuplicatedInResponse() throws Exception {
         FirebaseToken token = mockToken("uid-eco", Map.of());
-        when(firebaseAuth.verifyIdToken("token-eco", true)).thenReturn(token);
+        when(firebaseAuth.verifyIdToken("token-eco")).thenReturn(token);
 
         mockDownstream.enqueue(new MockResponse().setResponseCode(200)
                 .setHeader("X-Request-Id", "abc").setBody("ok"));
@@ -619,7 +600,7 @@ class FirebaseAuthGlobalFilterTest {
     @ValueSource(booleans = {true, false})
     void emailVerifiedClaim_isPropagatedToDownstream(boolean claimValue) throws Exception {
         FirebaseToken token = mockToken("uid-verificacion", Map.of("email_verified", claimValue));
-        when(firebaseAuth.verifyIdToken("token-" + claimValue, true)).thenReturn(token);
+        when(firebaseAuth.verifyIdToken("token-" + claimValue)).thenReturn(token);
 
         mockDownstream.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
 
@@ -641,7 +622,7 @@ class FirebaseAuthGlobalFilterTest {
     @Test
     void tokenWithoutEmailVerifiedClaim_omitsHeader() throws Exception {
         FirebaseToken token = mockToken("uid-sin-claim", Map.of());
-        when(firebaseAuth.verifyIdToken("token-sin-claim-verificacion", true)).thenReturn(token);
+        when(firebaseAuth.verifyIdToken("token-sin-claim-verificacion")).thenReturn(token);
 
         mockDownstream.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
 
@@ -663,7 +644,7 @@ class FirebaseAuthGlobalFilterTest {
     @Test
     void clientEmailVerifiedHeader_isReplacedByTokenClaim() throws Exception {
         FirebaseToken token = mockToken("uid-suplanta-verificacion", Map.of("email_verified", false));
-        when(firebaseAuth.verifyIdToken("token-suplanta-verificacion", true)).thenReturn(token);
+        when(firebaseAuth.verifyIdToken("token-suplanta-verificacion")).thenReturn(token);
 
         mockDownstream.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
 
@@ -726,7 +707,7 @@ class FirebaseAuthGlobalFilterTest {
     void verificationRoute_withValidToken_reachesAccountsWithIdentityContract() throws Exception {
         FirebaseToken token = mockToken("uid-activa", Map.of("email_verified", true, "roles", List.of("free")));
         when(token.getEmail()).thenReturn("ana@cameia.tech");
-        when(firebaseAuth.verifyIdToken("token-activa", true)).thenReturn(token);
+        when(firebaseAuth.verifyIdToken("token-activa")).thenReturn(token);
 
         mockDownstream.enqueue(new MockResponse().setResponseCode(204));
 

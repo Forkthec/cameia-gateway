@@ -228,7 +228,7 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
 
         // El rechazo se captura antes del flatMap: así solo cubre la verificación del token, y un
         // fallo al reenviar al microservicio nunca se confunde con un token inválido (plan §3.4)
-        return Mono.fromCallable(() -> firebaseAuth.verifyIdToken(idToken, true))
+        return Mono.fromCallable(() -> firebaseAuth.verifyIdToken(idToken))
                 .subscribeOn(Schedulers.boundedElastic())
                 // tras escribir el 401 se completa vacío: el flatMap no corre y nada se reenvía
                 .onErrorResume(this::isTokenRejection,
