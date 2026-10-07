@@ -2,6 +2,8 @@ package tech.cameia.gateway.exception;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpStatus;
@@ -107,6 +109,29 @@ class GlobalErrorHandlerLoggingTest {
                 .isEqualTo("application/json;charset=UTF-8");
         assertThat(exchange.getResponse().getBodyAsString().block())
                 .isEqualTo("{\"code\":\"NOT_FOUND\",\"message\":\"Recurso no encontrado\"}");
+    }
+
+    /** Cada estado del catálogo declara el charset UTF-8 junto con su código. */
+    @ParameterizedTest
+    @CsvSource({"401,AUTH_REQUIRED", "404,NOT_FOUND", "502,BAD_GATEWAY",
+            "503,SERVICE_UNAVAILABLE", "504,GATEWAY_TIMEOUT"})
+    void catalogStatus_declaresUtf8Charset(int status, String code) {
+        MockServerWebExchange exchange =
+                handle(new ResponseStatusException(HttpStatus.valueOf(status), CLIENT_TEXT));
+
+        assertThat(exchange.getResponse().getHeaders().getContentType().toString())
+                .isEqualTo("application/json;charset=UTF-8");
+        assertThat(exchange.getResponse().getBodyAsString().block()).contains("\"code\":\"" + code + "\"");
+    }
+
+    /** El estado por defecto (fallo no previsto) también declara el charset UTF-8. */
+    @Test
+    void unexpectedFailure_declaresUtf8Charset() {
+        MockServerWebExchange exchange = handle(new IllegalStateException("fallo interno simulado"));
+
+        assertThat(exchange.getResponse().getHeaders().getContentType().toString())
+                .isEqualTo("application/json;charset=UTF-8");
+        assertThat(exchange.getResponse().getBodyAsString().block()).contains("\"code\":\"INTERNAL_ERROR\"");
     }
 
     // ── REQ-LOG-05: el log no repite texto del cliente ───────────────────────

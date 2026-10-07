@@ -254,11 +254,12 @@ class FirebaseAuthGlobalFilterTest {
     // ── Caso 3: sin header Authorization ────────────────────────────────────
 
     @Test
-    void missingAuthorization_returns401() {
+    void missingAuthorization_returns401AndUtf8Charset() {
         webTestClient.get()
                 .uri("/api/v1/profiles/me")
                 .exchange()
                 .expectStatus().isUnauthorized()
+                .expectHeader().valueEquals("Content-Type", "application/json;charset=UTF-8")
                 .expectBody()
                 .jsonPath("$.code").isEqualTo("AUTH_REQUIRED");
     }
@@ -288,7 +289,7 @@ class FirebaseAuthGlobalFilterTest {
     // ── Caso 4: token inválido ───────────────────────────────────────────────
 
     @Test
-    void invalidToken_returns401() throws Exception {
+    void invalidToken_returns401AndUtf8Charset() throws Exception {
         when(firebaseAuth.verifyIdToken("token-invalido"))
                 .thenThrow(mock(FirebaseAuthException.class));
 
@@ -297,8 +298,10 @@ class FirebaseAuthGlobalFilterTest {
                 .header("Authorization", "Bearer token-invalido")
                 .exchange()
                 .expectStatus().isUnauthorized()
+                .expectHeader().valueEquals("Content-Type", "application/json;charset=UTF-8")
                 .expectBody()
-                .jsonPath("$.code").isEqualTo("AUTH_REQUIRED");
+                .jsonPath("$.code").isEqualTo("AUTH_REQUIRED")
+                .jsonPath("$.message").isEqualTo("Token de acceso inválido");
     }
 
     // ── Caso 4b: Bearer vacío (REQ-02, prueba 7 del plan) ────────────────────
@@ -308,7 +311,7 @@ class FirebaseAuthGlobalFilterTest {
      * solicitud no llega al microservicio.
      */
     @Test
-    void emptyBearerToken_returns401WithoutReachingDownstream() {
+    void emptyBearerToken_returns401AndUtf8CharsetWithoutReachingDownstream() {
         int requestsBefore = mockDownstream.getRequestCount();
 
         webTestClient.get()
@@ -316,6 +319,7 @@ class FirebaseAuthGlobalFilterTest {
                 .header("Authorization", "Bearer ")
                 .exchange()
                 .expectStatus().isUnauthorized()
+                .expectHeader().valueEquals("Content-Type", "application/json;charset=UTF-8")
                 .expectBody()
                 .jsonPath("$.code").isEqualTo("AUTH_REQUIRED");
 
@@ -325,12 +329,13 @@ class FirebaseAuthGlobalFilterTest {
     // ── Caso 4c: esquema distinto de Bearer (REQ-02, prueba 8 del plan) ──────
 
     @Test
-    void nonBearerScheme_returns401() {
+    void nonBearerScheme_returns401AndUtf8Charset() {
         webTestClient.get()
                 .uri("/api/v1/profiles/me")
                 .header("Authorization", "Basic xyz")
                 .exchange()
                 .expectStatus().isUnauthorized()
+                .expectHeader().valueEquals("Content-Type", "application/json;charset=UTF-8")
                 .expectBody()
                 .jsonPath("$.code").isEqualTo("AUTH_REQUIRED");
     }
@@ -342,7 +347,7 @@ class FirebaseAuthGlobalFilterTest {
      * {@link FirebaseAuthException}, el cliente igualmente recibe {@code 401}.
      */
     @Test
-    void firebaseIllegalArgument_returns401() throws Exception {
+    void firebaseIllegalArgument_returns401AndUtf8Charset() throws Exception {
         when(firebaseAuth.verifyIdToken("token-malformado"))
                 .thenThrow(new IllegalArgumentException("token malformado"));
 
@@ -351,6 +356,7 @@ class FirebaseAuthGlobalFilterTest {
                 .header("Authorization", "Bearer token-malformado")
                 .exchange()
                 .expectStatus().isUnauthorized()
+                .expectHeader().valueEquals("Content-Type", "application/json;charset=UTF-8")
                 .expectBody()
                 .jsonPath("$.code").isEqualTo("AUTH_REQUIRED");
     }
@@ -419,6 +425,18 @@ class FirebaseAuthGlobalFilterTest {
                 .uri("/actuator/health")
                 .exchange()
                 .expectStatus().isOk();
+    }
+
+    /** Las respuestas de actuator declaran el charset UTF-8 conservando el tipo que elige Spring. */
+    @ParameterizedTest
+    @ValueSource(strings = {"/actuator/health", "/actuator/info"})
+    void actuator_declaresUtf8Charset(String path) {
+        webTestClient.get()
+                .uri(path)
+                .exchange()
+                .expectStatus().isOk()
+                .expectHeader().valueEquals("Content-Type",
+                        "application/vnd.spring-boot.actuator.v3+json;charset=UTF-8");
     }
 
     // ── Caso 7: X-Request-Id enviado por el cliente se conserva (REQ-09) ─────

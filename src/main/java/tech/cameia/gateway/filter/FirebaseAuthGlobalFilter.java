@@ -99,6 +99,13 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
     private static final String BEARER_PREFIX = "Bearer ";
 
     /**
+     * Tipo de contenido de las respuestas JSON que escribe este filtro. {@code MediaType.APPLICATION_JSON}
+     * no declara {@code charset}; el estándar de seguridad exige declararlo en toda respuesta con cuerpo.
+     */
+    private static final MediaType APPLICATION_JSON_UTF8 =
+            new MediaType("application", "json", StandardCharsets.UTF_8);
+
+    /**
      * Cabeceras que solo el Gateway emite. Cualquier valor que llegue del cliente con uno de estos
      * nombres se descarta antes de reenviar, tanto en rutas protegidas como públicas (REQ-07, REQ-10).
      */
@@ -438,6 +445,8 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
      * Responde {@code 401} con código {@code AUTH_REQUIRED} y termina el procesamiento: la solicitud
      * no llega al microservicio (REQ-02).
      *
+     * <p>El cuerpo se declara como {@code application/json} con charset UTF-8.
+     *
      * <p>Registra el rechazo en nivel {@code WARN} con su {@code X-Request-Id} (REQ-09). Nunca
      * registra el token ni la cabecera {@code Authorization}. La cabecera {@code X-Request-Id} de la
      * respuesta ya la fijó {@code filter(...)}.
@@ -457,7 +466,7 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
 
         exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
-        exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_JSON);
+        exchange.getResponse().getHeaders().setContentType(APPLICATION_JSON_UTF8);
 
         DataBuffer buffer = exchange.getResponse().bufferFactory().wrap(bytes);
         return exchange.getResponse().writeWith(Mono.just(buffer));
