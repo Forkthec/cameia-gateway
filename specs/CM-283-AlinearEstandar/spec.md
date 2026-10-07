@@ -236,7 +236,7 @@ Cada hallazgo se comprobó contra `origin/develop` y tiene un destino. «P1» es
 | H-G3 | «Hoy son 79 pruebas» y un estado de despliegue fechado | P1 C |
 | H-G4 | `docs/COMO-FUNCIONA.md` afirma fecha, rama y dos conteos de pruebas distintos («27/27» y «62»), y `docs/DOCKER-LOCAL.md` otro («10») | P1 C |
 | H-G5 | `README.md` enlaza una spec que no existe, lista encabezados incompletos y rama `<tipo>/CM-NNN` | P1 C |
-| H-G6 | `CAMEIA_ENTREVISTA_URL` apunta al puerto 8083 y Entrevista escucha en 8080 dentro de la red de Docker | P2-07 de Entrevista (puerto único 8083); se verifica con el compose del Gateway |
+| H-G6 | `CAMEIA_ENTREVISTA_URL` apunta hoy al puerto **8080** (`application.yml:45` y `docker-compose.yml:46`: `http://cameia-entrevista:8080`), mientras `.env.example:53` sugiere `http://localhost:8083` y el `AGENTS.md` (§9) documenta `http://cameia-entrevista-app:8083` (otro host y otro puerto); el destino de P2-07 es el puerto único 8083 en los tres sitios | P2-07 de Entrevista (puerto único 8083); se verifica con el compose del Gateway |
 | H-G7 | El Gateway no bloquea el 403 `EMAIL_NOT_VERIFIED` (`GW-TBD-17`) | CM-179, bloque 3 |
 | H-G8 | Las pruebas que arrancan el contexto con `@SpringBootTest` se llaman `*Test` | P2-02 |
 
@@ -331,6 +331,8 @@ Cada caso se ejecuta con salida real y se reporta en el PR. Los comandos son de 
 | V-13 | La Parte 1 no cambia código | `git diff --name-only origin/develop` | Solo archivos `*.md`, `CONTRIBUTING.md`, `docs/**` y `specs/**` |
 
 Casos de la Parte 2: los de cada pieza en la sección 7.
+
+**Parte 1 terminada** = V-01 a V-13 en verde con su salida real en el PR de cada repositorio. **Secciones comunes:** las secciones que repiten las cuatro specs se cambian en las cuatro en el mismo bloque de trabajo; V-01 compara el estándar, no la redacción de las specs.
 
 ## 9. Fuera de alcance
 
