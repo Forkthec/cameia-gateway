@@ -1,10 +1,9 @@
 # Cómo funciona el API Gateway (estado real del código)
 
 > **Para personas.** Esto describe lo que el código *hace hoy*, no lo que debería hacer.
-> Las reglas que debe seguir quien programa aquí están en [`AGENTS.md`](../AGENTS.md).
+> Las reglas que debe seguir quien programa aquí están en [`CLAUDE.md`](../CLAUDE.md).
 >
-> Actualizado el 14/09/2026 tras `CM-104-correcciones`, rama `CM-104-correcciones-bloque-3`, base `c0f834e`.
-> Todo lo que se afirma aquí se comprobó leyendo el código o ejecutándolo: suite en verde, 27/27.
+> Todo lo que se afirma aquí se comprobó leyendo el código o ejecutándolo.
 > El escaneo original (11/09/2026, base `cd5b4c0`) encontró los defectos que corrigió ese spec;
 > este documento ya no los describe como vigentes.
 
@@ -168,7 +167,7 @@ el microservicio es idéntico en ambos. Son dos capas independientes:
 | Pública (`POST /webhooks/wompi`, `POST /api/v1/users`) | Igual que la privada | Ninguna: las `X-User-*` del cliente se borran | `X-Request-Id` |
 
 Hasta CM-14 la ruta pública reenviaba el `Authorization` del cliente. Con el registro abierto se borra: un ID
-Token que el navegador mande por inercia no debe llegar a cameia-cuentas (`AGENTS.md` §7, bloqueante 4). Wompi
+Token que el navegador mande por inercia no debe llegar a cameia-cuentas (`CLAUDE.md` §6, bloqueante 4). Wompi
 no lo necesita, porque autentica su webhook con una firma en el cuerpo.
 
 ### Cómo funciona
@@ -189,7 +188,7 @@ Detalles que suelen costar horas de depuración, y cómo quedaron resueltos:
 - **El flag**: `GATEWAY_OIDC_ENABLED` alimenta `gateway.oidc.signing-enabled`, que vale `false` en local. El
   perfil `prod` lo fija en `true` literal, y `OidcRequiredInProd` impide arrancar `prod` sin firma.
 
-El detalle completo del objetivo está en [`AGENTS.md` §6](../AGENTS.md).
+El detalle completo del objetivo está en [`CLAUDE.md` §3](../CLAUDE.md).
 
 ---
 
@@ -382,7 +381,7 @@ Esto es lo que conviene entender antes de añadir rutas:
 
 **1. Abrir una ruta al público exige recompilar.**
 Una ruta privada solo necesita el YAML. Una pública exige además editar `PUBLIC_ROUTES`, recompilar y volver a
-construir la imagen. `AGENTS.md` §5 ya lo documenta.
+construir la imagen. `CLAUDE.md` §3 ya lo documenta.
 
 **2. La comparación es de texto exacto, sin comodines.**
 `PUBLIC_ROUTES` es un `Set<PublicRoute>` y se consulta con `.contains(new PublicRoute(método, ruta))`. No
@@ -518,7 +517,7 @@ Con Docker, sin instalar Java ni Maven:
 
 ```bash
 docker network create cameia-net        # una sola vez
-docker compose run --rm verify          # compila y corre las 62 pruebas
+docker compose run --rm verify          # compila y corre las pruebas
 docker compose up --build -d            # levanta solo el gateway ('verify' está tras el perfil tools)
 curl http://localhost:8080/actuator/health
 ```
