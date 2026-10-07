@@ -2,7 +2,7 @@
 
 - **Tarea:** CM-260 · Error · Sprint 2 · sin padre · responsable: Paula Andrea Muñoz Delgado
 - **Repositorio:** `cameia-gateway`, rama `CM-260-charset-content-type-gateway`, creada desde `origin/develop` (`4c79b6e`)
-- **Estado:** spec **aprobada por Paula el 6-oct-2026**; las preguntas 1 a 3 están respondidas y la 4 (Vela) solo cambia el texto de una prueba de CM-179
+- **Estado:** spec **aprobada por Paula el 6-oct-2026**; las cuatro preguntas están cerradas (la 4, por RFC 9110, sin consulta)
 - **Estimación:** ≈ 1 h (de la reserva del sprint). Un solo PR de unas 40 líneas de diff.
 - **Atributos de calidad que toca:** seguridad (ASVS 4.1.1) y compatibilidad de contrato (el valor de un encabezado cambia).
 
@@ -47,7 +47,7 @@ spec de esa tarea); cambios en Cuentas, Perfil o Entrevista; cualquier cambio de
 
 Valor literal del encabezado: lo que produce Spring al serializar `new MediaType("application", "json", StandardCharsets.UTF_8)`,
 es decir `application/json;charset=UTF-8` (sin espacio tras el punto y coma). Es equivalente a `application/json; charset=UTF-8`
-del CA-1.2.13 (RFC 9110 §8.3.1); la pregunta 4 lo deja anotado.
+del CA-1.2.13 (RFC 9110 §8.3.1); por eso las pruebas comparan el texto exacto que emite Spring (pregunta 4, cerrada sin consulta).
 
 ## 4. Reglas, validaciones y errores
 
@@ -99,7 +99,7 @@ Sin base de datos ni migración (el Gateway no persiste).
 | 1 | ¿Constante propia del filtro (D1) o paquete compartido? | **Respondida (Paula, 6-oct): propia del filtro** | Constante propia: respeta `AGENTS.md` §3 y la regla de tres | El código del bloque |
 | 2 | Los `application/problem+json` de Cuentas y los JSON de Perfil/Entrevista los escriben esos servicios y el Gateway los reenvía tal cual. ¿Se verifica su charset en una tarea aparte? | **Respondida (Paula, 6-oct): sí, como verificación de solo lectura dentro de CM-283** | Sí, como verificación de solo lectura dentro de CM-283 o una tarea corta; no se mezcla con CM-260 | Nada de CM-260 |
 | 3 | Las respuestas de `/actuator/health` y `/actuator/info` las escribe Spring Boot. ¿Se mide su `Content-Type` en la tarea 1 y, si falta el charset, se corrige dentro de CM-260? | **Respondida (Paula, 6-oct): se mide en T1; si falta el charset, se trae la salida real y Paula decide** | Medir primero (tarea T1); si no declara charset, decidir con la salida real en la mano | Alcance si el resultado es negativo |
-| 4 | El CA-1.2.13 escribe `application/json; charset=UTF-8` (con espacio); Spring emite `application/json;charset=UTF-8`. ¿Se acepta la forma de Spring? | PENDIENTE de Vela | Aceptar: equivalentes por RFC 9110 | Texto de la prueba de CM-179 |
+| 4 | El CA-1.2.13 escribe `application/json; charset=UTF-8` (con espacio) y Spring emite `application/json;charset=UTF-8` | **Cerrada sin consulta (cambio sin alternativa):** son el mismo valor según RFC 9110 §8.3.1 (los parámetros del tipo de contenido no dependen del espacio); las pruebas comparan el texto exacto que emite Spring (`application/json;charset=UTF-8`) | — | Nada |
 
 Además, la descripción de Jira pide al reportante «endpoints afectados, evidencia y versión probada»: **acción para Vela** (completarla);
 el hallazgo de esta spec los da: los cuatro caminos de `401` del filtro, versión `4c79b6e`.
