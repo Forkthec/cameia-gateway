@@ -16,7 +16,9 @@ Base: `origin/develop` `4c79b6e`. Un solo bloque, un solo PR (≈ 40 líneas de 
 | Modificar | `src/main/java/tech/cameia/gateway/filter/FirebaseAuthGlobalFilter.java` | Constante `APPLICATION_JSON_UTF8`; línea 460 la usa; Javadoc de `writeUnauthorized` (líneas 436-450) dice que declara charset UTF-8 |
 | Modificar | `src/test/java/tech/cameia/gateway/filter/FirebaseAuthGlobalFilterTest.java` | Aserción de `Content-Type` en los cinco tests de 401 (líneas 257, 291, 311, 328, 345) |
 | Modificar | `src/test/java/tech/cameia/gateway/exception/GlobalErrorHandlerLoggingTest.java` | Prueba parametrizada por estado (junto a `errorResponse_isUnchanged`, línea 100) |
-| Crear | `src/test/java/tech/cameia/gateway/arch/ContentTypeArchTest.java` | Regla `productionCodeDoesNotUseBareApplicationJson`, sin analizar las clases de prueba |
+| Modificar | `src/test/java/tech/cameia/gateway/arch/GatewayArchTest.java` | Regla `productionCodeDoesNotUseCharsetlessTextMediaTypes` sobre las clases cuyo nombre no termina en `Test` |
+| Crear | `src/main/java/tech/cameia/gateway/filter/ActuatorCharsetWebFilter.java` y su prueba unitaria | Charset de las respuestas de texto de actuator (REQ-CS-08, REQ-CS-09) |
+| Modificar | `AGENTS.md` §3 y §4 | El paquete `filter` incluye un `WebFilter`; fila de `ActuatorCharsetWebFilter` en la tabla de componentes |
 | No tocar | `GlobalErrorHandler.java`, `application*.yml`, `pom.xml`, `Dockerfile`, `.github/` | Fuera de alcance |
 
 ## 3. Reutiliza / por qué no se extrae

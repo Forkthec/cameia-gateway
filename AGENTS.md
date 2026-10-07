@@ -99,7 +99,7 @@ El modelo completo de seguridad, que es la razón de existir de este componente,
 ```text
 tech.cameia.gateway
 ├── config          FirebaseConfig, OidcConfig, OidcConfig (beanss de arranque) y OidcRequiredInProd (guardia) y OidcRequiredInProd (guardia)
-├── filter          GlobalFilter — auth de entrada, identidad y firma OIDC de salida
+├── filter          GlobalFilter — auth de entrada, identidad y firma OIDC de salida; WebFilter — charset de actuator
 └── exception       GlobalErrorHandler — formato JSON de errores HTTP
 ```
 
@@ -131,6 +131,7 @@ exception      independiente
 | `OidcTokenSource` | `filter` | Interfaz de una operación, `tokenFor(audience)`. Permite probar la firma con una fuente falsa |
 | `GoogleIdTokenSource` | `filter` | Pide el token a Google con `GoogleCredentials.getApplicationDefault()`. Cachea el objeto `IdTokenCredentials` por audience, nunca la cadena del token. Falla el arranque si las credenciales no son una service account |
 | `OidcSigningGlobalFilter` | `filter` | Orden `LOWEST_PRECEDENCE - 2`, antes del reenvío. Audience = `esquema://host[:puerto]` de la ruta, sin path, sin barra final y sin el puerto por defecto que `Route` agrega. Fija `Authorization` con `set`. Si no hay token responde `503` sin reenviar |
+| `ActuatorCharsetWebFilter` | `filter` | `WebFilter` de orden `HIGHEST_PRECEDENCE`. Bajo la ruta base de actuator (`management.endpoints.web.base-path`, por defecto `/actuator`) añade `charset=UTF-8` al `Content-Type` de texto (`text/*`, `application/json`, `application/*+json`) que no lo declara, justo antes de confirmar la respuesta; los tipos binarios y las demás rutas no se tocan. Falla el arranque si la ruta base es la raíz |
 
 > `GatewayProperties` se eliminó en CM-104-correcciones (REQ-14): nada la leía. La firma OIDC no la reintrodujo: le bastan `@ConditionalOnProperty` y `@Value`.
 > `GatewayProperties` se eliminó en CM-104-correcciones (REQ-14): nada la leía. La firma OIDC no la reintrodujo: le bastan `@ConditionalOnProperty` y `@Value`.

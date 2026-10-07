@@ -86,27 +86,30 @@ Definición de terminado de cada una: pruebas nuevas en verde, suite completa en
 
 ## [x] T5 · Regla de arquitectura (REQ-CS-06) — ≤ 10 min, ≈ 20 líneas
 
-- **Archivo nuevo:** `src/test/java/tech/cameia/gateway/arch/ContentTypeArchTest.java`. No se toca `GatewayArchTest`: este analiza también las clases de prueba, y varias pruebas usan `MediaType.APPLICATION_JSON` (p. ej. `FirebaseAuthGlobalFilterTest` líneas 526 y 575), así que la regla fallaría por ellas.
+- **Archivo:** `src/test/java/tech/cameia/gateway/arch/GatewayArchTest.java` (la suite única de arquitectura de `AGENTS.md` §8). Esa clase analiza también las clases de prueba, y varias usan `MediaType.APPLICATION_JSON` para construir solicitudes (p. ej. `FirebaseAuthGlobalFilterTest`); por eso la regla se limita a las clases cuyo nombre no termina en `Test`.
 - **Código de referencia:**
   ```java
-  /** Impide declarar respuestas JSON sin charset en el código de producción (ASVS 4.1.1). */
-  @AnalyzeClasses(packages = "tech.cameia.gateway", importOptions = ImportOption.DoNotIncludeTests.class)
-  class ContentTypeArchTest {
-
-      @ArchTest
-      static final ArchRule productionCodeDoesNotUseBareApplicationJson =
-              noClasses()
-                      .should().accessField(MediaType.class, "APPLICATION_JSON")
-                      .because("Content-Type JSON sin charset incumple ASVS 4.1.1: usar un MediaType con charset UTF-8");
-  }
+  @ArchTest
+  static final ArchRule productionCodeDoesNotUseCharsetlessTextMediaTypes =
+          noClasses()
+                  .that().haveSimpleNameNotEndingWith("Test")
+                  .should().accessField(MediaType.class, "APPLICATION_JSON")
+                  .orShould().accessField(MediaType.class, "APPLICATION_PROBLEM_JSON")
+                  .orShould().accessField(MediaType.class, "APPLICATION_NDJSON")
+                  .orShould().accessField(MediaType.class, "TEXT_PLAIN")
+                  .orShould().accessField(MediaType.class, "TEXT_HTML")
+                  .because("Content-Type de texto sin charset incumple ASVS 4.1.1: usar un MediaType con charset UTF-8");
   ```
-  Imports: `com.tngtech.archunit.core.importer.ImportOption`, `org.springframework.http.MediaType`, más los de `GatewayArchTest`.
-- **Comprobación obligatoria:** con el cambio de T2 temporalmente revertido, la regla debe **fallar** señalando `FirebaseAuthGlobalFilter`; con T2 aplicado, pasa. Anotar ambas salidas. Si no falla con T2 revertido, detenerse: la regla no sirve y se sustituye por otra forma de guarda (decisión de Paula).
+  Import nuevo: `org.springframework.http.MediaType`. Javadoc de la regla con su límite (constantes `*_VALUE` y literales; spec D2).
+- **Comprobación obligatoria:** con un acceso prohibido introducido temporalmente en una clase de producción (T2 revertido, o `MediaType.APPLICATION_PROBLEM_JSON` en `ActuatorCharsetWebFilter`), la regla debe **fallar** señalando esa clase; sin él, pasa. Anotar ambas salidas. Si no falla con T2 revertido, detenerse: la regla no sirve y se sustituye por otra forma de guarda (decisión de Paula).
 
 ## [x] T2b · Charset de actuator (REQ-CS-08, D4) — decidido por Paula tras T1
 
 - **Medido en T1:** `/actuator/health` y `/actuator/info` → `200 application/vnd.spring-boot.actuator.v3+json` (sin charset); `/api/v1/profiles/me` → `401 application/json`; `/ruta-que-no-existe` → `404 application/json;charset=UTF-8`.
-- **Archivos:** `filter/ActuatorCharsetWebFilter.java` (nuevo), `ActuatorCharsetWebFilterTest.java` (nuevo, 6 pruebas) y `actuator_declaresUtf8Charset` en `FirebaseAuthGlobalFilterTest` (health e info).
+- **Archivos:** `filter/ActuatorCharsetWebFilter.java` (nuevo), `ActuatorCharsetWebFilterTest.java` (nuevo, 16 ejecuciones) y `actuator_declaresUtf8Charset` en `FirebaseAuthGlobalFilterTest` (health e info).
+- **Reglas del filtro:** la ruta base sale de `@Value("${management.endpoints.web.base-path:/actuator}")`, sin barra final; se compara con `PathPatternParser.defaultInstance.parse(base + "/**")` sobre `getPath().pathWithinApplication()` (cubre la ruta base sola, el prefijo de la aplicación y los parámetros de matriz). Solo se completan tipos de texto (`text/*`, subtipo `json` o terminado en `+json`) sin charset. Ruta base raíz (`/` o vacía): `IllegalStateException` en el constructor (REQ-CS-09).
+- **Trampa:** la comprobación de tipo no puede usar `MediaType.APPLICATION_JSON` (`isCompatibleWith`): la regla de T5 lo prohíbe en producción; se comparan `getType()` y `getSubtype()`.
+- **AGENTS.md:** §3 dice que `filter` incluye un `WebFilter`; §4 agrega la fila de `ActuatorCharsetWebFilter`.
 
 ## [x] T6 · Cierre del bloque — ≤ 10 min
 
@@ -118,5 +121,5 @@ Definición de terminado de cada una: pruebas nuevas en verde, suite completa en
 
 ## Resultado del bloque
 
-- Suite: 104 pruebas, 0 fallos. T3 y T5 se comprobaron fallando con la corrección revertida y en verde con ella.
-- Cobertura del código modificado: `ActuatorCharsetWebFilter` 12/12 líneas, 8/8 ramas; `FirebaseAuthGlobalFilter` 87/87 líneas, 41/44 ramas (las 3 ramas sin cubrir ya existían y no son de este cambio); `GlobalErrorHandler` sin cambios de producción (46/49 líneas, 23/30 ramas). Global: 89,9 % líneas, 85,1 % ramas.
+- Suite: 114 pruebas, 0 fallos, 0 omitidas (`./mvnw clean verify`). T3 y T5 se comprobaron fallando con un acceso prohibido o la corrección revertida, y en verde sin él.
+- Cobertura del código nuevo o modificado: `ActuatorCharsetWebFilter` 18/18 líneas, 18/18 ramas; `FirebaseAuthGlobalFilter` 87/87 líneas, 41/44 ramas (las 3 ramas sin cubrir ya existían y no son de este cambio); `GlobalErrorHandler` sin cambios de producción (46/49 líneas, 23/30 ramas). Global: 90,1 % líneas, 86,3 % ramas.
