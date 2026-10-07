@@ -58,11 +58,11 @@ Una tarjeta, una verificación con salida real y recién entonces la siguiente. 
 - **Cubre.** REQ-DOC-05, REQ-DOC-11.
 - **Archivos.** Crear `docs/errores.md`.
 - **Hacer.** Escribir cuatro apartados con estos títulos: `# Errores del servicio`, `## Formato`, `## Códigos que el servicio emite`, `## Respuestas sin código` y `## Cómo se agrega un código`.
-  - `Formato`: «Las respuestas de error siguen la [sección 6 del estándar](estandar-backend.md#6-errores). Esta página lista lo que el servicio emite hoy.»
+  - `Formato`: `` «Las respuestas de error siguen la [sección 6 del estándar](estandar-backend.md#6-errores). Esta página lista lo que el servicio emite hoy.» ``
   - `Cómo se agrega un código`: «Un código nuevo se agrega aquí con la spec que lo introduce, junto a su excepción de negocio, su estado, su mensaje y su prueba. Un código publicado no se reutiliza ni se renombra.»
   - `Códigos que el servicio emite` y `Respuestas sin código`: según el repositorio.
     - **Gateway.** Tabla `| Código | HTTP | Mensaje | Origen | Prueba |` con cada código de `GlobalErrorHandler` leído con `git grep -n "ErrorBody(" -- src/main/java/tech/cameia/gateway/exception/GlobalErrorHandler.java`, su mensaje literal y su prueba en `GatewayErrorMappingTest`; antes de la tabla: «El Gateway conserva su formato `{"code","message"}` con un catálogo cerrado.» Bajo `Respuestas sin código`: «Ninguna.»
-    - **Cuentas y Perfil.** Bajo `Códigos que el servicio emite`: «Todavía no emite el campo `code`; se adopta en la primera tarea de código del servicio (ver [ADR 0001](adr/0001-codigo-de-error-y-request-id.md)).» Bajo `Respuestas sin código`: tabla `| HTTP | Título | Cuándo |` con cada respuesta que producen `BusinessExceptionHandler` (Cuentas) o `ApiExceptionHandler` y la respuesta de finalización (Perfil), leídas del manejador con `git grep -n "HttpStatus\|ProblemDetail" -- src/main`.
+    - **Cuentas y Perfil.** Bajo `Códigos que el servicio emite`: `` «Todavía no emite el campo `code`; se adopta en la primera tarea de código del servicio (ver [ADR 0001](adr/0001-codigo-de-error-y-request-id.md)).» `` Bajo `Respuestas sin código`: tabla `| HTTP | Título | Cuándo |` con cada respuesta que producen `BusinessExceptionHandler` (Cuentas) o `ApiExceptionHandler` y la respuesta de finalización (Perfil), leídas del manejador con `git grep -n "HttpStatus\|ProblemDetail" -- src/main`.
     - **Entrevista.** Bajo `Códigos que el servicio emite`: «El servicio todavía no tiene manejador de errores ni emite el campo `code`.» Bajo `Respuestas sin código`: «Ninguna: `GET /health` es su único endpoint.»
 - **Verificación.** V-07 (enlaces); cada fila de la tabla tiene su línea de código (V-12): se anota en el PR el `git grep` de cada una; V-05 y V-06 sin coincidencias.
 - **Trampas.** No listar códigos de otro servicio ni los reservados (`EMAIL_NOT_VERIFIED`, `PLAN_LIMIT`, `LLM_UNAVAILABLE`).
@@ -110,7 +110,7 @@ El catálogo del servicio está en [errores.md](../errores.md) y las reglas, en 
 - Un formato de error propio distinto de `ProblemDetail`: obligaría a cambiar todos los clientes.
 ```
 
-  **Variante del Gateway.** Mismo título, `Estado` y `Alternativas descartadas`; `Contexto`: «El Gateway es el primer punto de la cadena y responde errores propios (token ausente, servicio caído, tiempo agotado) con `{"code","message"}` y un catálogo cerrado de códigos.» `Decisión`: «El Gateway conserva ese formato y su catálogo, que está en [errores.md](../errores.md). Genera el `X-Request-Id` cuando el cliente no lo envía y lo devuelve en el encabezado de cada respuesta; los servicios lo toman como `requestId`.» `Consecuencias`: «Los servicios adoptan `code`, `requestId` y `errors[].code` según la sección 6 del [estándar](../estandar-backend.md); el Gateway no cambia su formato. Los códigos `AUTH_REQUIRED` y los demás del catálogo se conservan tal cual.»
+  **Variante del Gateway.** Mismo título, `Estado` y `Alternativas descartadas`; `Contexto`: «El Gateway es el primer punto de la cadena y responde errores propios (token ausente, servicio caído, tiempo agotado) con `{"code","message"}` y un catálogo cerrado de códigos.» `Decisión`: `` «El Gateway conserva ese formato y su catálogo, que está en [errores.md](../errores.md). Genera el `X-Request-Id` cuando el cliente no lo envía y lo devuelve en el encabezado de cada respuesta; los servicios lo toman como `requestId`.» `` `Consecuencias`: `` «Los servicios adoptan `code`, `requestId` y `errors[].code` según la sección 6 del [estándar](../estandar-backend.md); el Gateway no cambia su formato. Los códigos `AUTH_REQUIRED` y los demás del catálogo se conservan tal cual.» ``
 - **Verificación.** V-07; V-05 y V-06 sin coincidencias.
 - **Detenerse si** el ADR de otro repositorio ya existe con otro número.
 - **Terminado cuando** el archivo existe y la verificación pasa.
@@ -122,7 +122,7 @@ El catálogo del servicio está en [errores.md](../errores.md) y las reglas, en 
 - **Archivos.** Crear (Gateway y Perfil) o reescribir (Cuentas y Entrevista) `docs/constitution.md`.
 - **Hacer.**
   1. Primera línea: `# Constitución de <nombre del repositorio>`.
-  2. Párrafo: «Principios no negociables. Toda spec y todo PR los cumple. Si dos documentos chocan, rige el orden de la [sección 1 del estándar](estandar-backend.md#1-alcance-y-precedencia). El detalle vive en el [CLAUDE.md](../CLAUDE.md) y en el [estándar](estandar-backend.md).»
+  2. Párrafo: `` «Principios no negociables. Toda spec y todo PR los cumple. Si dos documentos chocan, rige el orden de la [sección 1 del estándar](estandar-backend.md#1-alcance-y-precedencia). El detalle vive en el [CLAUDE.md](../CLAUDE.md) y en el [estándar](estandar-backend.md).» ``
   3. Lista numerada con los quince principios comunes de la sección 4.3 de la spec, con su texto y su `→` de comprobación. Gateway: los principios 2 y 7 se redactan sin base de datos («No tiene base de datos» y «No aplica: el Gateway no tiene base de datos»). Entrevista: sin la mención de Wompi; Cuentas: ninguna otra.
   4. A continuación, desde el 16, los principios propios del repositorio con el texto literal de su requisito (REQ-GW-06).
 - **Verificación.** `grep -c "^[0-9]*\. \*\*" docs/constitution.md` da 15 más los propios (Cuentas 17, Gateway 18, Perfil 19, Entrevista 17); V-07; V-05, V-06 y V-08 sin coincidencias.
@@ -238,7 +238,7 @@ Cada entrada es un archivo `NN_tema_prompt.md`, con `NN` consecutivo.
 - **Cubre.** REQ-DOC-09, REQ-GW-08, REQ-GW-09.
 - **Archivos.** Modificar `README.md`, `docs/COMO-FUNCIONA.md` y `docs/DOCKER-LOCAL.md`.
 - **Hacer.**
-  1. `README.md`: línea 5, cambiar `specs/104-base-tecnica/` por `specs/CM-104-base-tecnica/`; tabla de servicios (líneas 51 a 55), dejar para cada servicio los encabezados completos del contrato (`X-User-Id`, `X-User-Email`, `X-User-Roles`, `X-Request-Id`, `X-User-Plan` y `X-User-Email-Verified`); sección de ramas (líneas 112 a 114), reemplazar por: «La rama, el commit, los tipos, el título del PR y la revisión están en [CONTRIBUTING.md](CONTRIBUTING.md).»; comandos de verificación a `./mvnw.cmd clean verify`.
+  1. `README.md`: línea 5, cambiar `specs/104-base-tecnica/` por `specs/CM-104-base-tecnica/`; tabla de servicios (líneas 51 a 55), dejar para cada servicio los encabezados completos del contrato (`X-User-Id`, `X-User-Email`, `X-User-Roles`, `X-Request-Id`, `X-User-Plan` y `X-User-Email-Verified`); sección de ramas (líneas 112 a 114), reemplazar por: `` «La rama, el commit, los tipos, el título del PR y la revisión están en [CONTRIBUTING.md](CONTRIBUTING.md).» ``; comandos de verificación a `./mvnw.cmd clean verify`.
   2. `docs/COMO-FUNCIONA.md`: línea 4, `AGENTS.md` por `CLAUDE.md`; quitar la línea 6 (fecha, rama y base de la última actualización) y de la línea 7 el texto «suite en verde, 27/27»; línea 521, quitar «y corre las 62 pruebas».
   3. `docs/DOCKER-LOCAL.md`: cambiar `AGENTS.md` por `CLAUDE.md` donde enlace; línea 221, quitar «con 10 pruebas en verde».
 - **Verificación.** V-05, V-06, V-07 y V-08 sin hallazgos; `git diff --stat` solo muestra esos tres archivos.
