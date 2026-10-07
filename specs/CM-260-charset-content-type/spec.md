@@ -2,7 +2,7 @@
 
 - **Tarea:** CM-260 · Error · Sprint 2 · sin padre · responsable: Paula Andrea Muñoz Delgado
 - **Repositorio:** `cameia-gateway`, rama `CM-260-charset-content-type-gateway`, creada desde `origin/develop` (`4c79b6e`)
-- **Estado:** spec escrita; **pendiente de aprobación de Paula** (hay 4 preguntas abiertas, sección 9)
+- **Estado:** spec **aprobada por Paula el 6-oct-2026**; las preguntas 1 a 3 están respondidas y la 4 (Vela) solo cambia el texto de una prueba de CM-179
 - **Estimación:** ≈ 1 h (de la reserva del sprint). Un solo PR de unas 40 líneas de diff.
 - **Atributos de calidad que toca:** seguridad (ASVS 4.1.1) y compatibilidad de contrato (el valor de un encabezado cambia).
 
@@ -86,19 +86,19 @@ Sin base de datos ni migración (el Gateway no persiste).
 
 | # | Decisión | Porqué | Alternativas descartadas |
 |---|---|---|---|
-| D1 | Una constante `APPLICATION_JSON_UTF8` **propia del filtro**, no compartida con el manejador | `AGENTS.md` §3: `filter` no importa `exception` («cada uno escribe su propia respuesta») y `exception` es independiente; son 2 usos y la regla de tres pide extraer a la tercera. El CM-179 (403 en el mismo filtro) reutiliza la del filtro | Extraer a un paquete nuevo (`http`/`common`): cambia la estructura de paquetes que el `AGENTS.md` fija y agrega un paquete para una constante. Importar la constante del manejador desde el filtro: rompe la regla documentada. Es la **pregunta 1** (el análisis previo proponía extraerla; contradice el `AGENTS.md`) |
-| D2 | Regla ArchUnit contra `MediaType.APPLICATION_JSON` | Barata (6 líneas) y evita reintroducir el defecto; las pruebas de comportamiento solo cubren los caminos que existen hoy | Solo pruebas de comportamiento: no detectan una ruta de escritura nueva |
+| D1 | Una constante `APPLICATION_JSON_UTF8` **propia del filtro**, no compartida con el manejador | `AGENTS.md` §3: `filter` no importa `exception` («cada uno escribe su propia respuesta») y `exception` es independiente; son 2 usos y la regla de tres pide extraer a la tercera. El CM-179 (403 en el mismo filtro) reutiliza la del filtro: es un uso más **dentro de la misma clase**, no una tercera clase, así que no obliga a extraerla | Extraer a un paquete nuevo (`http`/`common`): cambia la estructura de paquetes que el `AGENTS.md` fija y agrega un paquete para una constante. Importar la constante del manejador desde el filtro: rompe la regla documentada. Es la **pregunta 1** (el análisis previo proponía extraerla; contradice el `AGENTS.md`) |
+| D2 | Regla ArchUnit contra `MediaType.APPLICATION_JSON` | Barata (6 líneas) y evita reintroducir el defecto; las pruebas de comportamiento solo cubren los caminos que existen hoy. Límite conocido: no detecta un tipo sin charset escrito como texto (`MediaType.parseMediaType("application/json")` o `"application/json"` en un encabezado); eso lo cubren las pruebas de comportamiento de cada camino | Solo pruebas de comportamiento: no detectan una ruta de escritura nueva |
 | D3 | El valor lo produce Spring (`new MediaType("application","json",UTF_8)`), no una cadena literal | Mismo mecanismo que ya usa el manejador; sin riesgo de errores de tipeo | `MediaType.parseMediaType("application/json; charset=utf-8")`: más texto y el mismo resultado |
 
-**Decisión humana (HITL):** PENDIENTE (Paula) para D1 y D2.
+**Decisión humana (HITL):** D1 y D2 aprobadas por Paula el 6-oct-2026.
 
 ## 9. Preguntas abiertas (rondas de 6; aquí son 4)
 
 | # | Pregunta | A quién | Recomendación | Bloquea |
 |---|---|---|---|---|
-| 1 | ¿Constante propia del filtro (D1) o paquete compartido? | PENDIENTE de Paula | Constante propia: respeta `AGENTS.md` §3 y la regla de tres | El código del bloque |
-| 2 | Los `application/problem+json` de Cuentas y los JSON de Perfil/Entrevista los escriben esos servicios y el Gateway los reenvía tal cual. ¿Se verifica su charset en una tarea aparte? | PENDIENTE de Paula (y Vela si hay tarea) | Sí, como verificación de solo lectura dentro de CM-283 o una tarea corta; no se mezcla con CM-260 | Nada de CM-260 |
-| 3 | Las respuestas de `/actuator/health` y `/actuator/info` las escribe Spring Boot. ¿Se mide su `Content-Type` en la tarea 1 y, si falta el charset, se corrige dentro de CM-260? | PENDIENTE de Paula | Medir primero (tarea T1); si no declara charset, decidir con la salida real en la mano | Alcance si el resultado es negativo |
+| 1 | ¿Constante propia del filtro (D1) o paquete compartido? | **Respondida (Paula, 6-oct): propia del filtro** | Constante propia: respeta `AGENTS.md` §3 y la regla de tres | El código del bloque |
+| 2 | Los `application/problem+json` de Cuentas y los JSON de Perfil/Entrevista los escriben esos servicios y el Gateway los reenvía tal cual. ¿Se verifica su charset en una tarea aparte? | **Respondida (Paula, 6-oct): sí, como verificación de solo lectura dentro de CM-283** | Sí, como verificación de solo lectura dentro de CM-283 o una tarea corta; no se mezcla con CM-260 | Nada de CM-260 |
+| 3 | Las respuestas de `/actuator/health` y `/actuator/info` las escribe Spring Boot. ¿Se mide su `Content-Type` en la tarea 1 y, si falta el charset, se corrige dentro de CM-260? | **Respondida (Paula, 6-oct): se mide en T1; si falta el charset, se trae la salida real y Paula decide** | Medir primero (tarea T1); si no declara charset, decidir con la salida real en la mano | Alcance si el resultado es negativo |
 | 4 | El CA-1.2.13 escribe `application/json; charset=UTF-8` (con espacio); Spring emite `application/json;charset=UTF-8`. ¿Se acepta la forma de Spring? | PENDIENTE de Vela | Aceptar: equivalentes por RFC 9110 | Texto de la prueba de CM-179 |
 
 Además, la descripción de Jira pide al reportante «endpoints afectados, evidencia y versión probada»: **acción para Vela** (completarla);
