@@ -6,7 +6,7 @@
 | Repositorio | cameia-gateway |
 | Rama | `CM-283-alinear-estandar` |
 | Base | `origin/develop` @ `4c79b6e` (5 de octubre de 2026) |
-| Estado | Pendiente de aprobación |
+| Estado | Aprobada por Paula Andrea Muñoz Delgado el 6 de octubre de 2026 |
 | Documentos hermanos | [plan.md](plan.md) · [tasks.md](tasks.md) |
 
 ## 1. Contexto y alcance
