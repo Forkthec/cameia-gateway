@@ -27,7 +27,7 @@ Un defecto previo del mismo tipo ya se corrigió solo en el manejador global; el
 
 ## 2. Alcance
 
-Dentro: el `Content-Type` del `401` del filtro; una prueba por cada camino de `401` del filtro; una prueba que cubra los estados
+Dentro: el `Content-Type` del `401` del filtro; el charset de las respuestas de actuator (`/actuator/**`, medido en T1: `application/vnd.spring-boot.actuator.v3+json` sin charset, decisión de Paula del 6-oct); una prueba por cada camino de `401` del filtro; una prueba que cubra los estados
 del catálogo del manejador global; una regla de arquitectura que impida volver a usar `MediaType.APPLICATION_JSON` en código de producción.
 
 Fuera: el `403 EMAIL_NOT_VERIFIED` de CM-179 (nacerá con el charset correcto usando la misma constante del filtro; se avisa en la
@@ -43,6 +43,7 @@ spec de esa tarea); cambios en Cuentas, Perfil o Entrevista; cualquier cambio de
 | REQ-CS-04 | Cuando el filtro responda `401` por **token inválido** (Firebase lanza `FirebaseAuthException` o `IllegalArgumentException`), el `Content-Type` debe ser `application/json;charset=UTF-8`. |
 | REQ-CS-05 | Mientras el Gateway esté en ejecución, cada estado del catálogo de `GlobalErrorHandler` (`401`, `404`, `502`, `503`, `504`) y el estado por defecto (`500`) debe responder con `Content-Type: application/json;charset=UTF-8`. |
 | REQ-CS-06 | El código de producción del Gateway no debe acceder a `MediaType.APPLICATION_JSON`; una prueba de arquitectura debe fallar si lo hace. |
+| REQ-CS-08 | Cuando el Gateway responda una petición a `/actuator/**` con un `Content-Type` que no declare `charset`, el sistema debe añadir `charset=UTF-8` conservando el tipo (`application/vnd.spring-boot.actuator.v3+json;charset=UTF-8`). Las respuestas sin `Content-Type` y las de otras rutas no se modifican. |
 | REQ-CS-07 | El cambio no debe alterar el estado HTTP, el cuerpo (`{"code":"AUTH_REQUIRED","message":"…"}`), los mensajes, el log `WARN` ni la cabecera `X-Request-Id` de ninguna respuesta. |
 
 Valor literal del encabezado: lo que produce Spring al serializar `new MediaType("application", "json", StandardCharsets.UTF_8)`,
@@ -90,7 +91,9 @@ Sin base de datos ni migración (el Gateway no persiste).
 | D2 | Regla ArchUnit contra `MediaType.APPLICATION_JSON` | Barata (6 líneas) y evita reintroducir el defecto; las pruebas de comportamiento solo cubren los caminos que existen hoy. Límite conocido: no detecta un tipo sin charset escrito como texto (`MediaType.parseMediaType("application/json")` o `"application/json"` en un encabezado); eso lo cubren las pruebas de comportamiento de cada camino | Solo pruebas de comportamiento: no detectan una ruta de escritura nueva |
 | D3 | El valor lo produce Spring (`new MediaType("application","json",UTF_8)`), no una cadena literal | Mismo mecanismo que ya usa el manejador; sin riesgo de errores de tipeo | `MediaType.parseMediaType("application/json; charset=utf-8")`: más texto y el mismo resultado |
 
-**Decisión humana (HITL):** D1 y D2 aprobadas por Paula el 6-oct-2026.
+| D4 | Un `WebFilter` (`ActuatorCharsetWebFilter`) que, solo para `/actuator/**`, completa el charset antes de confirmar la respuesta (`beforeCommit`) | Spring Boot no ofrece propiedad para el charset del tipo de actuator; el filtro es local, no toca las rutas proxificadas y conserva el tipo que eligió Spring. Es un `WebFilter` y no un `GlobalFilter` porque actuator no pasa por las rutas del Gateway | Reescribir el `Content-Type` de todas las respuestas: alteraría lo que los microservicios devuelven y rompe `downstreamProblemJson_isReturnedUnchanged`. Cambiar el tipo de actuator a `application/json`: cambia el contrato de las sondas |
+
+**Decisión humana (HITL):** D1 y D2 aprobadas por Paula el 6-oct-2026; D4 y la inclusión de actuator en el alcance, por Paula el 6-oct-2026 con la salida real de T1.
 
 ## 9. Preguntas abiertas (rondas de 6; aquí son 4)
 
@@ -115,6 +118,9 @@ el hallazgo de esta spec los da: los cuatro caminos de `401` del filtro, versió
 | `firebaseIllegalArgument_returns401WithUtf8Charset` | Firebase lanza `IllegalArgumentException` | ídem | REQ-CS-04 |
 | `everyCatalogStatus_declaresUtf8Charset` (parametrizada: 401, 404, 502, 503, 504, 500) | `ResponseStatusException` con cada estado; para 500, `RuntimeException` | `Content-Type` = `application/json;charset=UTF-8` y código del catálogo | REQ-CS-05 |
 | `productionCode_doesNotUseBareApplicationJson` (ArchUnit) | clases de `tech.cameia.gateway` | falla si alguna accede a `MediaType.APPLICATION_JSON` | REQ-CS-06 |
+| `actuatorHealth_declaresUtf8Charset` | `GET /actuator/health` sin token | 200, `Content-Type` = `application/vnd.spring-boot.actuator.v3+json;charset=UTF-8` | REQ-CS-08 |
+| `actuatorInfo_declaresUtf8Charset` | `GET /actuator/info` | ídem | REQ-CS-08 |
+| `ActuatorCharsetWebFilterTest` (unitaria) | `/actuator/x` con tipo sin charset; con tipo que ya trae charset; sin tipo; `/api/x` sin charset | solo el primero cambia; los demás quedan intactos | REQ-CS-08 |
 | Pruebas existentes (`missingAuthorization_returns401`, `unauthorizedResponse_includesRequestId`, `errorResponse_isUnchanged`, `GatewayErrorMappingTest`) | sin cambios | siguen en verde | REQ-CS-07 |
 
 Cobertura: el único cambio de producción es una constante y una línea; ambas quedan ejecutadas por las pruebas anteriores (meta ≥ 90 % de líneas y ramas del código modificado, que serán 100 %).
@@ -122,4 +128,5 @@ Cobertura: el único cambio de producción es una constante y una línea; ambas 
 ## 11. Fuera de alcance y riesgos
 
 - Riesgo: ninguno de producto. Si una prueba existente compara `application/json` exacto, se ajusta (se buscó: ninguna lo hace; `GlobalErrorHandlerLoggingTest` línea 106 ya espera el charset).
-- No se toca la configuración de CORS ni de actuator salvo que la pregunta 3 lo exija.
+- No se toca la configuración de CORS ni de `application*.yml`.
+- Riesgo de D4: una sonda de plataforma que compare el `Content-Type` exacto. No se ha verificado qué comparan las sondas de la plataforma; se avisa a DevOps en el PR.
