@@ -2,7 +2,7 @@
 
 API Gateway de CAMEIA. Proporciona el punto de entrada controlado para la aplicación web y enruta solicitudes hacia los microservicios del MVP.
 
-> **Estado:** CM-104 implementado — base técnica operativa (Spring Cloud Gateway + Firebase auth + Docker). Ver `specs/104-base-tecnica/` para el historial SDD.
+> **Estado:** CM-104 implementado — base técnica operativa (Spring Cloud Gateway + Firebase auth + Docker). Ver `specs/CM-104-base-tecnica/` para el historial SDD.
 
 ## Alcance del Sprint 1
 
@@ -48,11 +48,11 @@ flowchart LR
 | Dependencia | Header propagado | Notas |
 |---|---|---|
 | `cameia-web` | — | Consumidor; origen CORS configurable |
-| `cameia-cuentas` | `X-User-Id`, `X-User-Plan` | Sprint 1; también recibe `/webhooks/wompi` sin auth |
-| `cameia-perfil` | `X-User-Id`, `X-User-Plan` | Sprint 1 |
-| `cameia-entrevista` | `X-User-Id`, `X-User-Plan` | Sprint 1 |
-| `cameia-voz` | `X-User-Id`, `X-User-Plan` | Sprint 2 (ruta declarada) |
-| `cameia-auditoria` | `X-User-Id`, `X-User-Plan` | Sprint 2/3 (ruta declarada) |
+| `cameia-cuentas` | `X-User-Id`, `X-User-Email`, `X-User-Roles`, `X-Request-Id`, `X-User-Plan` y `X-User-Email-Verified` | Sprint 1; también recibe `/webhooks/wompi` sin token de Firebase |
+| `cameia-perfil` | `X-User-Id`, `X-User-Email`, `X-User-Roles`, `X-Request-Id`, `X-User-Plan` y `X-User-Email-Verified` | Sprint 1 |
+| `cameia-entrevista` | `X-User-Id`, `X-User-Email`, `X-User-Roles`, `X-Request-Id`, `X-User-Plan` y `X-User-Email-Verified` | Sprint 1 |
+| `cameia-voz` | `X-User-Id`, `X-User-Email`, `X-User-Roles`, `X-Request-Id`, `X-User-Plan` y `X-User-Email-Verified` | Sprint 2 (ruta declarada) |
+| `cameia-auditoria` | `X-User-Id`, `X-User-Email`, `X-User-Roles`, `X-Request-Id`, `X-User-Plan` y `X-User-Email-Verified` | Sprint 2/3 (ruta declarada) |
 | Firebase Auth | — | Verifica ID Token; extrae uid y claim `plan` |
 
 El custom claim en Firebase se llama `plan` (string `"FREE"` | `"PREMIUM"`).
@@ -60,7 +60,7 @@ Lo escribe cameia-cuentas al activar una suscripción.
 
 ## Ejecución local
 
-**Requisitos:** Docker Desktop. No se necesita JDK ni Maven instalado.
+**Requisitos:** Docker Desktop. Para usar `./mvnw.cmd` hace falta además JDK 21; con Docker no se necesita JDK ni Maven instalado.
 
 ### 1. Configurar variables de entorno
 
@@ -69,10 +69,11 @@ cp .env.example .env
 # Editar .env con los valores reales (Firebase, URLs de servicios)
 ```
 
-### 2. Ejecutar los tests
+### 2. Verificar
 
 ```bash
-docker compose run --rm verify
+./mvnw.cmd clean verify          # build, pruebas y cobertura
+docker compose run --rm verify   # pruebas sin instalar Java ni Maven
 ```
 
 ### 3. Construir la imagen
@@ -109,12 +110,7 @@ curl http://localhost:8080/actuator/health
 
 ## Contribución
 
-- Rama estable: `main`.
-- Rama de integración: `develop`.
-- Ramas de trabajo: `<tipo>/CM-NNN-<descripcion-kebab-case>`.
-- Los cambios ordinarios se integran a `develop` mediante Pull Request.
-- La promoción a `main` utiliza un PR independiente.
-- El autor no puede ser la única aprobación.
+La rama, el commit, los tipos, el título del PR y la revisión están en [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Cuándo actualizar este README
 

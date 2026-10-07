@@ -218,7 +218,7 @@ Las pruebas no necesitan la red compartida ni los servicios corriendo; usan mock
 docker compose run --rm verify
 ```
 
-Resultado esperado: `BUILD SUCCESS` con 10 pruebas en verde.
+Resultado esperado: `BUILD SUCCESS`.
 
 ---
 
