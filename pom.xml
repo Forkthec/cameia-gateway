@@ -27,8 +27,8 @@
       ajustar a la versión estable disponible.
     -->
     <spring-cloud.version>2025.1.3</spring-cloud.version>
-    <firebase-admin.version>9.10.0</firebase-admin.version>
-    <archunit.version>1.5.0</archunit.version>
+    <firebase-admin.version>9.11.0</firebase-admin.version>
+    <archunit.version>1.5.1</archunit.version>
     <mockwebserver.version>5.5.0</mockwebserver.version>
     <!--
       Firebase Admin SDK trae grpc-netty-shaded (paquete relocado) pero Spring Cloud Gateway 5.x
