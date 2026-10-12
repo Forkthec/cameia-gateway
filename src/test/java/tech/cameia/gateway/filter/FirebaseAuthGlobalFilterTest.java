@@ -16,6 +16,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -39,7 +40,10 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -771,6 +775,167 @@ class FirebaseAuthGlobalFilterTest {
                 .isEqualTo(MediaType.APPLICATION_PROBLEM_JSON);
     }
 
+    // ── Correo sin verificar: el Gateway responde 403 (REQ-EV-01 a REQ-EV-09) ──
+
+    /**
+     * REQ-EV-01, REQ-EV-02 y REQ-EV-08: un token aceptado por Firebase con {@code email_verified=false}
+     * recibe {@code 403 EMAIL_NOT_VERIFIED} en toda ruta privada, incluidas las cercanas a la
+     * exceptuada (otro método, barra final, ruta truncada, mayúsculas, carácter codificado, parámetro
+     * de ruta), y la petición no llega al microservicio.
+     *
+     * @param method método HTTP de la petición
+     * @param path ruta de la petición
+     */
+    @ParameterizedTest
+    @CsvSource({
+            "GET,/api/v1/profiles/me",
+            "GET,/api/v1/users/me",
+            "PUT,/api/v1/profiles/123",
+            "POST,/api/v1/interviews",
+            "GET,/api/v1/users/me/verification",
+            "POST,/api/v1/users/me/verification/",
+            "POST,/api/v1/users/me",
+            "POST,/api/v1/users/ME/VERIFICATION",
+            "POST,/api/v1/users/me/%76erification",
+            "POST,/api/v1/users/me/verification;x=1"
+    })
+    void unverifiedEmail_onPrivateRoute_returns403WithoutReachingDownstream(String method, String path) {
+        FirebaseToken token = mockToken("uid-sin-verificar", Map.of("email_verified", false));
+        verifyAs("token-sin-verificar", token);
+        int requestsBefore = mockDownstream.getRequestCount();
+
+        EntityExchangeResult<byte[]> result = webTestClient.method(HttpMethod.valueOf(method))
+                .uri(path)
+                .header("Authorization", "Bearer token-sin-verificar")
+                .exchange()
+                .expectStatus().isForbidden()
+                .expectHeader().exists("X-Request-Id")
+                .expectBody().returnResult();
+
+        MediaType contentType = result.getResponseHeaders().getContentType();
+        assertThat(contentType.getType()).isEqualTo("application");
+        assertThat(contentType.getSubtype()).isEqualTo("json");
+        assertThat(contentType.getCharset()).isEqualTo(StandardCharsets.UTF_8);
+        assertThat(new String(result.getResponseBody(), StandardCharsets.UTF_8)).isEqualTo(
+                "{\"code\":\"EMAIL_NOT_VERIFIED\",\"message\":\"Tu correo aún no está verificado.\"}");
+        assertThat(mockDownstream.getRequestCount()).isEqualTo(requestsBefore);
+    }
+
+    /** REQ-EV-02: la ruta de verificación es la única que una cuenta sin verificar puede usar. */
+    @Test
+    void unverifiedEmail_onVerificationRoute_passesThroughWithFalseHeader() throws Exception {
+        FirebaseToken token = mockToken("uid-activando", Map.of("email_verified", false));
+        verifyAs("token-sin-verificar", token);
+        mockDownstream.enqueue(new MockResponse().setResponseCode(204));
+
+        webTestClient.post()
+                .uri("/api/v1/users/me/verification")
+                .header("Authorization", "Bearer token-sin-verificar")
+                .exchange()
+                .expectStatus().isNoContent();
+
+        RecordedRequest req = mockDownstream.takeRequest(5, TimeUnit.SECONDS);
+        assertThat(req).isNotNull();
+        assertThat(req.getHeader("X-User-Email-Verified")).isEqualTo("false");
+    }
+
+    /** REQ-EV-04: con el correo verificado la ruta privada sigue funcionando. */
+    @Test
+    void verifiedEmail_onPrivateRoute_passesThrough() throws Exception {
+        FirebaseToken token = mockToken("uid-verificado", Map.of("email_verified", true));
+        verifyAs("token-verificado", token);
+        mockDownstream.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
+
+        webTestClient.get()
+                .uri("/api/v1/profiles/me")
+                .header("Authorization", "Bearer token-verificado")
+                .exchange()
+                .expectStatus().isOk();
+
+        RecordedRequest req = mockDownstream.takeRequest(5, TimeUnit.SECONDS);
+        assertThat(req).isNotNull();
+        assertThat(req.getHeader("X-User-Email-Verified")).isEqualTo("true");
+    }
+
+    /** REQ-EV-05: en una ruta pública no se evalúa el token; ni siquiera se consulta a Firebase. */
+    @Test
+    void unverifiedEmail_onPublicRoute_isNotEvaluated() throws Exception {
+        mockDownstream.enqueue(new MockResponse().setResponseCode(201).setBody("{}"));
+        clearInvocations(firebaseAuth);
+
+        webTestClient.post()
+                .uri("/api/v1/users")
+                .header("Authorization", "Bearer token-sin-verificar")
+                .header("Content-Type", "application/json")
+                .bodyValue("{}")
+                .exchange()
+                .expectStatus().isCreated();
+
+        RecordedRequest req = mockDownstream.takeRequest(5, TimeUnit.SECONDS);
+        assertThat(req).isNotNull();
+        assertThat(req.getHeader("Authorization")).isNullOrEmpty();
+        assertThat(req.getHeader("X-User-Id")).isNull();
+        assertThat(req.getHeader("X-User-Email-Verified")).isNull();
+        verify(firebaseAuth, never()).verifyIdToken(anyString());
+    }
+
+    /** REQ-EV-06: la cabecera del cliente no cambia la decisión; manda el claim. */
+    @Test
+    void clientHeaderSayingVerified_doesNotOverrideFalseClaim() {
+        FirebaseToken token = mockToken("uid-suplanta-403", Map.of("email_verified", false));
+        verifyAs("token-suplanta-403", token);
+        int requestsBefore = mockDownstream.getRequestCount();
+
+        webTestClient.get()
+                .uri("/api/v1/profiles/me")
+                .header("Authorization", "Bearer token-suplanta-403")
+                .header("X-User-Email-Verified", "true")
+                .exchange()
+                .expectStatus().isForbidden()
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("EMAIL_NOT_VERIFIED");
+
+        assertThat(mockDownstream.getRequestCount()).isEqualTo(requestsBefore);
+    }
+
+    /** REQ-EV-07: el rechazo queda en el log con su requestId y su código, sin datos personales. */
+    @Test
+    void unverifiedRejection_isLoggedWithoutSensitiveData(CapturedOutput output) {
+        FirebaseToken token = mockToken("uid-secreto-123", Map.of("email_verified", false));
+        when(token.getEmail()).thenReturn("secreto@cameia.tech");
+        verifyAs("token-sin-verificar", token);
+
+        webTestClient.get()
+                .uri("/api/v1/profiles/me")
+                .header("Authorization", "Bearer token-sin-verificar")
+                .header("X-Request-Id", "req-sin-verificar")
+                .exchange()
+                .expectStatus().isForbidden();
+
+        assertThat(output.getOut())
+                .contains("Solicitud rechazada por correo sin verificar "
+                        + "[code=EMAIL_NOT_VERIFIED, requestId=req-sin-verificar]")
+                .doesNotContain("token-sin-verificar")
+                .doesNotContain("secreto@cameia.tech")
+                .doesNotContain("uid-secreto-123");
+    }
+
+    /** REQ-EV-09: sin token o con un token que Firebase rechaza, el código sigue siendo 401. */
+    @Test
+    void invalidOrMissingToken_stillReturns401() throws Exception {
+        when(firebaseAuth.verifyIdToken("token-rechazado")).thenThrow(mock(FirebaseAuthException.class));
+
+        webTestClient.get().uri("/api/v1/profiles/me").exchange()
+                .expectStatus().isUnauthorized()
+                .expectBody().jsonPath("$.code").isEqualTo("AUTH_REQUIRED");
+
+        webTestClient.get().uri("/api/v1/profiles/me")
+                .header("Authorization", "Bearer token-rechazado")
+                .exchange()
+                .expectStatus().isUnauthorized()
+                .expectBody().jsonPath("$.code").isEqualTo("AUTH_REQUIRED");
+    }
+
     // ── OIDC prueba 7: con el flag apagado no hay firma (REQ-OIDC-07, REQ-OIDC-08) ──
 
     /**
@@ -784,6 +949,15 @@ class FirebaseAuthGlobalFilterTest {
     }
 
     // ── Utilidad ─────────────────────────────────────────────────────────────
+
+    /** Hace que Firebase acepte {@code idToken} y devuelva {@code token}. */
+    private void verifyAs(String idToken, FirebaseToken token) {
+        try {
+            when(firebaseAuth.verifyIdToken(idToken)).thenReturn(token);
+        } catch (FirebaseAuthException e) {
+            throw new IllegalStateException(e);
+        }
+    }
 
     private FirebaseToken mockToken(String uid, Map<String, Object> claims) {
         FirebaseToken token = mock(FirebaseToken.class);
