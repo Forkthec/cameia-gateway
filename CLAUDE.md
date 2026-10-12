@@ -44,7 +44,7 @@ En código reactivo, máximo dos niveles de anidamiento: se evitan los `flatMap`
 |---|---|---|
 | `GatewayApplication` | raíz | `@SpringBootApplication`, punto de entrada |
 | `FirebaseConfig` | `config` | Inicializa `FirebaseApp` en `@PostConstruct`; falla el arranque si las credenciales son inválidas (fail-fast). Con `FIREBASE_AUTH_EMULATOR_HOST` con valor y fuera de un despliegue usa credenciales ficticias (emulador de Firebase Auth) en vez de las de Google. Con esa variable definida, aunque esté vacía, y `K_SERVICE` o el perfil `prod`, **falla el arranque**: el emulador emite tokens sin firma y el SDK los aceptaría (`specs/CM-190-emulador-firebase-auth/`) |
-| `FirebaseAuthGlobalFilter` | `filter` | Resuelve `X-Request-Id` y lo devuelve en la respuesta. Caso A: valida el Bearer token (`401` si falta, está vacío o Firebase lo rechaza), borra los `X-User-*` del cliente, emite `X-User-Id`, `X-User-Email`, `X-User-Roles`, `X-User-Plan` y `X-User-Email-Verified` con `set` y elimina `Authorization`. Caso B, por método y ruta exactos (`PUBLIC_ROUTES`, y `DEV_PUBLIC_ROUTES` solo con el perfil `local`): borra los `X-User-*` y el `Authorization` del cliente. Falla el arranque si `local` está activo con `K_SERVICE` definida |
+| `FirebaseAuthGlobalFilter` | `filter` | Resuelve `X-Request-Id` y lo devuelve en la respuesta. Caso A: valida el Bearer token (`401` si falta, está vacío o Firebase lo rechaza; `403` si el correo no está verificado), borra los `X-User-*` del cliente, emite `X-User-Id`, `X-User-Email`, `X-User-Roles`, `X-User-Plan` y `X-User-Email-Verified` con `set` y elimina `Authorization`. Caso B, por método y ruta exactos (`PUBLIC_ROUTES`, y `DEV_PUBLIC_ROUTES` solo con el perfil `local`): borra los `X-User-*` y el `Authorization` del cliente. Falla el arranque si `local` está activo con `K_SERVICE` definida |
 | `GlobalErrorHandler` | `exception` | Formatea el error como `{"code":"...","message":"..."}` desde un catálogo cerrado (`AUTH_REQUIRED`, `NOT_FOUND`, `BAD_GATEWAY`, `SERVICE_UNAVAILABLE`, `GATEWAY_TIMEOUT`, `INTERNAL_ERROR`). Nunca copia el mensaje de la excepción: la registra en el log con su `X-Request-Id`. El nivel depende del estado: 5xx `ERROR` con traza; 404 `INFO` y otros 4xx `WARN`, ambos sin traza |
 | `OidcConfig` | `config` | Con `gateway.oidc.signing-enabled=true` crea `GoogleIdTokenSource` y `OidcSigningGlobalFilter`; con `false` no crea ningún bean. La fuente real se apaga en pruebas con `gateway.oidc.google-credentials.enabled=false` |
 | `OidcRequiredInProd` | `config` | Con el perfil `prod`, falla el arranque si la firma OIDC está apagada |
@@ -126,12 +126,12 @@ La ruta de Cuentas es `/api/v1/users/**`, no `/api/v1/accounts/**`: manda el val
 | `X-User-Roles` | claim de roles, lista separada por comas | Sí, en Caso A |
 | `X-Request-Id` | lo genera el Gateway si el cliente no lo envía | Sí, en toda ruta |
 | `X-User-Plan` | custom claim `plan` (`FREE` o `PREMIUM`), que escribe `cameia-cuentas` | No: si el claim no existe, **el encabezado se omite** |
-| `X-User-Email-Verified` | claim `email_verified` del token | Sí, en Caso A, **incluido cuando vale `false`**; solo se omite si el claim no existe |
+| `X-User-Email-Verified` | claim `email_verified` del token | Sí, en Caso A; `false` solo llega a `POST /api/v1/users/me/verification`, porque en las demás rutas privadas el Gateway responde `403`; se omite si el claim no existe |
 
 - El Gateway **reemplaza**, no agrega, cualquier `X-User-*` que llegue del cliente: `mutate().header(...)` añade en lugar de reemplazar, así que se usa `set`. Un cliente externo no puede inyectar identidad.
 - La ausencia de `X-User-Plan` significa plan desconocido o sin suscripción activa; el Gateway no inventa un plan por defecto.
 - `X-User-Email-Verified` se lee del mapa de claims y no de `FirebaseToken.isEmailVerified()`: ese método devuelve `false` cuando el claim no existe y convertiría una ausencia en una afirmación. Un `false` sí se propaga; la ausencia significa «no probado».
-- El Gateway **no bloquea** las rutas de Caso A cuando `email_verified` es `false` (ver sección 10). Quien lo implemente debe exceptuar `POST /api/v1/users/me/verification`.
+- El Gateway rechaza con `403` `{"code":"EMAIL_NOT_VERIFIED","message":"Tu correo aún no está verificado."}` (charset UTF-8) toda ruta de Caso A cuando `email_verified` es `false`, salvo `POST /api/v1/users/me/verification` (método y ruta exactos); el claim ausente no bloquea. `cameia-cuentas` vuelve a comprobar en la activación.
 - No se agregan campos derivados del JWT sin justificar su necesidad y documentar el contrato en una spec.
 
 **Trazabilidad.** El Gateway genera `X-Request-Id` cuando el cliente no lo envía y lo devuelve en el encabezado de cada respuesta; los servicios lo toman como `requestId`.
@@ -229,7 +229,6 @@ Las specs nuevas viven en `specs/CM-NNN-Descripcion/` con `Descripcion` en Pasca
 
 | Pendiente | Responsable | Qué bloquea |
 |---|---|---|
-| `GW-TBD-17`: responder `403` con `EMAIL_NOT_VERIFIED` en las rutas de Caso A cuando `email_verified` es `false`, exceptuando `POST /api/v1/users/me/verification` | Backend | Que `cameia-cuentas` y el Gateway apliquen la misma regla de correo sin verificar |
 | `GW-TBD-11`: estado de los endpoints de Actuator, hoy públicos por arquitectura | Backend | Exponer cualquier endpoint de Actuator distinto de `health` e `info` |
 | Lista definitiva de rutas públicas (Caso B) | Backend, con el Product Owner | Abrir cualquier ruta nueva al público |
 | Puerto de `cameia-entrevista`: el Gateway apunta al `8080` en `application.yml` y en el compose, y `.env.example` sugiere `8083` | Backend | Que las tres configuraciones coincidan con el puerto único del servicio |
