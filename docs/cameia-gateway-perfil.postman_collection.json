@@ -512,6 +512,129 @@
           }
         }
       ]
+    },
+    {
+      "name": "Correo sin verificar (emulador)",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{idToken}}",
+            "type": "string"
+          }
+        ]
+      },
+      "description": "Requiere el compose del Gateway con su emulador de Firebase Auth (puerto 9099). Un usuario recién creado en el emulador nace con email_verified=false. Ejecutar en orden: V-00 guarda el idToken que usan las demás.",
+      "item": [
+        {
+          "name": "V-00 · alta en el emulador",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "var json = pm.response.json();",
+                  "pm.collectionVariables.set('idToken', json.idToken);",
+                  "pm.test('idToken guardado', () => pm.expect(json.idToken).to.be.a('string').and.not.empty);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{emulatorUrl}}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=fake-api-key",
+            "description": "Crea un usuario sintético en el emulador. Su token trae email_verified=false.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"prueba+{{$timestamp}}@ejemplo.test\",\"password\":\"Clave-Prueba-1234\",\"returnSecureToken\":true}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "V-01 · 403 en ruta privada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('Content-Type application/json con charset UTF-8', () => {",
+                  "  pm.expect(pm.response.headers.get('Content-Type').replace(/\\s/g, '').toLowerCase())",
+                  "    .to.eql('application/json;charset=utf-8');",
+                  "});",
+                  "pm.test('Cuerpo exacto', () => pm.expect(pm.response.text()).to.eql(\"{\\\"code\\\":\\\"EMAIL_NOT_VERIFIED\\\",\\\"message\\\":\\\"Tu correo aún no está verificado.\\\"}\"));",
+                  "pm.test('Trae X-Request-Id', () => pm.expect(pm.response.headers.has('X-Request-Id')).to.be.true);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/profiles/me",
+            "description": "Con el correo sin verificar el Gateway responde 403 sin reenviar la petición."
+          }
+        },
+        {
+          "name": "V-02 · la ruta de verificación no da 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('No es 403 ni 401: el Gateway la reenvió', () => {",
+                  "  pm.expect(pm.response.code).to.not.be.oneOf([401, 403]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/users/me/verification",
+            "description": "Única ruta exceptuada. Sin Cuentas levantado el Gateway responde 503 SERVICE_UNAVAILABLE, lo que prueba que reenvió."
+          }
+        },
+        {
+          "name": "V-03 · 401 sin token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Código AUTH_REQUIRED', () => pm.expect(pm.response.json().code).to.eql('AUTH_REQUIRED'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/profiles/me",
+            "description": "Sin Authorization sigue siendo 401, nunca 403.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
     }
   ],
   "variable": [
@@ -521,6 +644,8 @@
     { "key": "workExpId",    "value": "",                      "type": "string" },
     { "key": "targetRoleId", "value": "",                      "type": "string" },
     { "key": "skillId",      "value": "",                      "type": "string" },
-    { "key": "educationId",  "value": "",                      "type": "string" }
+    { "key": "educationId",  "value": "",                      "type": "string" },
+    { "key": "emulatorUrl", "value": "http://localhost:9099", "type": "string" },
+    { "key": "idToken",      "value": "",                      "type": "string" }
   ]
 }

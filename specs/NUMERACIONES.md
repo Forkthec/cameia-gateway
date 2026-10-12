@@ -47,7 +47,7 @@ El estado solo se anota donde el spec lo registra; en el resto, el spec es la fu
 | `GW-TBD-14` | CM-104-correcciones-OIDC | Webhook de Wompi: firma del cuerpo frente a `Authorization` | Abierto |
 | `GW-TBD-15` | CM-14-Registro-usuario | Quién crea el usuario en Firebase | ✅ Cerrado |
 | `GW-TBD-16` | CM-14-Registro-usuario | Envío de correos de verificación y recuperación | ✅ Cerrado |
-| `GW-TBD-17` | CM-14-Registro-usuario | Qué puede hacer un usuario con `email_verified=false` | 🟡 Parcial: ruta cerrada en CM-14-verificacion-correo (`POST /api/v1/users/me/verification`); falta si el Gateway bloquea el resto |
+| `GW-TBD-17` | CM-14-Registro-usuario | Qué puede hacer un usuario con `email_verified=false` | ✅ Cerrado: el Gateway rechaza con `403` los tokens con `email_verified=false`, salvo la ruta de verificación (CM-179, CA-1.2.13) |
 | `GW-TBD-18` | CM-14-Registro-usuario | Protección del registro contra abuso | ✅ Cerrado para el Gateway · abierto para DevOps |
 | `GW-TBD-19` | CM-14-Registro-usuario | Perfil de desarrollo activo en despliegue | ✅ Cerrado |
 | `GW-TBD-20` | CM-14-Registro-usuario | Inventario de health v1 | ✅ Cerrado |
@@ -56,7 +56,7 @@ El estado solo se anota donde el spec lo registra; en el resto, el spec es la fu
 | `GW-TBD-23` | CM-14-Registro-usuario | Prefijo público o método + ruta exactos | ✅ Cerrado |
 | `GW-TBD-24` | CM-104-correcciones-OIDC | Service account del Gateway en Cloud Run *(antes `GW-TBD-10` en ese spec)* | Respondido. Creación pendiente |
 | `GW-TBD-25` | CM-104-correcciones-OIDC | Quién concede `roles/run.invoker` *(antes `GW-TBD-11` en ese spec)* | Respondido. Ejecución pendiente |
-| `GW-TBD-26` | CM-14-verificacion-correo | Propagar `email_verified` o rechazar con `403` en el Gateway | ✅ Cerrado: se propaga en `X-User-Email-Verified` |
+| `GW-TBD-26` | CM-14-verificacion-correo | Propagar `email_verified` o rechazar con `403` en el Gateway | 🔁 Sustituido por `GW-TBD-17`: el Gateway propaga y además rechaza (CM-179) |
 | `GW-TBD-27` | CM-184-nivel-log-4xx | Nivel de log de cada estado: `404` en `INFO` y resto de `4xx` en `WARN`, todo `4xx` en `WARN`, o no tocar el código | ✅ Cerrado 19/09/2026: opción 1 (`404` → `INFO`, otros `4xx` → `WARN`, los dos sin traza) |
 | `GW-TBD-28` | CM-190-emulador-firebase-auth | Si `FIREBASE_AUTH_EMULATOR_HOST` aparece en un despliegue, ¿el Gateway falla el arranque o la ignora? | ✅ Cerrado 19/09/2026: falla el arranque (el SDK la lee del entorno por su cuenta, no se puede ignorar) |
 

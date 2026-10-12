@@ -188,7 +188,9 @@ a pedirlo después, usa el mismo cuerpo contra `accounts:signInWithPassword`. En
 
 El gateway pasa al microservicio las cabeceras `X-User-Id`, `X-User-Email`,
 `X-User-Email-Verified` y, si el usuario tiene el claim `plan`, `X-User-Plan`. Un token inválido,
-vacío o ausente da `401`.
+vacío o ausente da `401`. Un token con el correo sin verificar (`email_verified=false`, como el de
+un usuario recién creado en el emulador) da `403 EMAIL_NOT_VERIFIED` en toda ruta privada, salvo
+`POST /api/v1/users/me/verification`.
 
 ---
 

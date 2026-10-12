@@ -45,6 +45,9 @@ import static java.util.stream.Collectors.joining;
  *       autenticado y el microservicio no debe creer que lo hay.</li>
  * </ul>
  *
+ * <p>Rechaza con {@code 403 EMAIL_NOT_VERIFIED} un token cuyo claim {@code email_verified} es
+ * {@code false}, salvo en {@code POST /api/v1/users/me/verification}; la ausencia del claim no bloquea.
+ *
  * <p>En los dos casos garantiza un {@code X-Request-Id} en la solicitud reenviada y en la respuesta
  * al cliente, con el mismo valor.
  *
@@ -94,6 +97,12 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
 
     /** Nombre del claim estándar de Firebase con el estado de verificación del correo. */
     static final String EMAIL_VERIFIED_CLAIM = "email_verified";
+
+    /** Única ruta que una cuenta con el correo sin verificar puede usar: es la forma de salir de ese estado. */
+    static final String VERIFICATION_PATH = "/api/v1/users/me/verification";
+
+    /** Código del rechazo por correo sin verificar; lo reserva el contrato del proyecto. */
+    static final String EMAIL_NOT_VERIFIED_CODE = "EMAIL_NOT_VERIFIED";
 
     /** Esquema de la cabecera {@code Authorization} que lleva el ID Token de Firebase, con su espacio. */
     private static final String BEARER_PREFIX = "Bearer ";
@@ -241,7 +250,32 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
                 .onErrorResume(this::isTokenRejection,
                         e -> writeUnauthorized(exchange, "Token de acceso inválido", requestId)
                                 .then(Mono.<FirebaseToken>empty()))
-                .flatMap(decodedToken -> chain.filter(withIdentity(exchange, decodedToken, requestId)));
+                .flatMap(decodedToken -> shouldReject(exchange.getRequest(), decodedToken)
+                        ? writeEmailNotVerified(exchange, requestId)
+                        : chain.filter(withIdentity(exchange, decodedToken, requestId)));
+    }
+
+    /**
+     * El token ya lo aceptó Firebase: decide si su correo permite usar esta ruta. Solo bloquea un
+     * claim {@code email_verified} igual a {@code false}; la ausencia del claim no bloquea.
+     *
+     * @param request solicitud entrante
+     * @param token   ID Token de Firebase ya verificado
+     * @return {@code true} si debe responderse {@code 403 EMAIL_NOT_VERIFIED}
+     */
+    private boolean shouldReject(ServerHttpRequest request, FirebaseToken token) {
+        return "false".equalsIgnoreCase(readEmailVerified(token)) && !isVerificationRoute(request);
+    }
+
+    /**
+     * Método y ruta exactos, sin normalizar: ninguna variante (otro método, barra final,
+     * mayúsculas) queda exceptuada.
+     *
+     * @param request solicitud entrante
+     * @return {@code true} solo para {@code POST /api/v1/users/me/verification}
+     */
+    private boolean isVerificationRoute(ServerHttpRequest request) {
+        return HttpMethod.POST.equals(request.getMethod()) && VERIFICATION_PATH.equals(request.getPath().value());
     }
 
     /**
@@ -460,12 +494,45 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
     private Mono<Void> writeUnauthorized(ServerWebExchange exchange, String message, String requestId) {
         // REQ-09: el rechazo queda trazado. Nunca se registra el token ni la cabecera Authorization
         log.warn("Solicitud rechazada por autenticación [requestId={}]", requestId);
+        return writeError(exchange, HttpStatus.UNAUTHORIZED, "AUTH_REQUIRED", message);
+    }
 
+    /**
+     * Responde {@code 403 EMAIL_NOT_VERIFIED} y termina el procesamiento: la solicitud no llega al
+     * microservicio ni se firma con OIDC. Registra el rechazo con su {@code X-Request-Id}; nunca el
+     * token, el correo ni el {@code uid}.
+     *
+     * @param exchange  intercambio HTTP de la solicitud entrante
+     * @param requestId identificador de trazabilidad que se incluye en el log
+     * @return la escritura de la respuesta {@code 403}
+     */
+    private Mono<Void> writeEmailNotVerified(ServerWebExchange exchange, String requestId) {
+        // El rechazo queda trazado con su identificador; nunca el token, el correo ni el uid
+        log.warn("Solicitud rechazada por correo sin verificar [code={}, requestId={}]",
+                EMAIL_NOT_VERIFIED_CODE, requestId);
+        return writeError(exchange, HttpStatus.FORBIDDEN, EMAIL_NOT_VERIFIED_CODE,
+                "Tu correo aún no está verificado.");
+    }
+
+    /**
+     * Escribe el cuerpo {@code {"code":...,"message":...}} con el estado indicado y
+     * {@code application/json} con charset UTF-8.
+     *
+     * <p>{@code code} y {@code message} son siempre textos fijos del Gateway, nunca datos de la
+     * petición ni el mensaje de una excepción.
+     *
+     * @param exchange intercambio HTTP de la solicitud entrante
+     * @param status   estado HTTP de la respuesta
+     * @param code     código estable del error
+     * @param message  mensaje en español para la persona
+     * @return la escritura de la respuesta
+     */
+    private Mono<Void> writeError(ServerWebExchange exchange, HttpStatus status, String code, String message) {
         String body = """
-                {"code":"AUTH_REQUIRED","message":"%s"}""".formatted(message);
+                {"code":"%s","message":"%s"}""".formatted(code, message);
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
 
-        exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+        exchange.getResponse().setStatusCode(status);
         exchange.getResponse().getHeaders().setContentType(APPLICATION_JSON_UTF8);
 
         DataBuffer buffer = exchange.getResponse().bufferFactory().wrap(bytes);
