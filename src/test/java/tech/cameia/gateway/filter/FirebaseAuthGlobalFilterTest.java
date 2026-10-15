@@ -1088,6 +1088,79 @@ class FirebaseAuthGlobalFilterTest {
         assertThat(output.getOut()).contains("[causa=TOKEN_MALFORMED]");
     }
 
+    // ── Ruta de cierre de sesión en todos los dispositivos (Caso A hacia Cuentas) ──
+
+    /** CA-1.8.1 y CA-1.8.2: con token válido, Cuentas recibe la identidad del token y no el Authorization del cliente. */
+    @Test
+    void logoutAllRoute_withValidToken_reachesAccountsWithIdentity() throws Exception {
+        FirebaseToken token = mockToken("uid-logout", Map.of("email_verified", true));
+        verifyAs("token-logout", token);
+        mockDownstream.enqueue(new MockResponse().setResponseCode(204));
+
+        webTestClient.post().uri("/api/v1/auth/logout-all")
+                .header("Authorization", "Bearer token-logout")
+                .exchange()
+                .expectStatus().isNoContent();
+
+        RecordedRequest req = mockDownstream.takeRequest(5, TimeUnit.SECONDS);
+        assertThat(req).isNotNull();
+        assertThat(req.getMethod()).isEqualTo("POST");
+        assertThat(req.getPath()).isEqualTo("/api/v1/auth/logout-all");
+        assertThat(req.getHeader("X-User-Id")).isEqualTo("uid-logout");
+        assertThat(req.getHeader("Authorization")).isNullOrEmpty();
+    }
+
+    /** Un X-User-Id escrito por el cliente nunca llega a Cuentas: manda el uid del token. */
+    @Test
+    void logoutAllRoute_clientIdentityHeader_isReplacedByTokenUid() throws Exception {
+        FirebaseToken token = mockToken("uid-logout", Map.of("email_verified", true));
+        verifyAs("token-logout", token);
+        mockDownstream.enqueue(new MockResponse().setResponseCode(204));
+
+        webTestClient.post().uri("/api/v1/auth/logout-all")
+                .header("Authorization", "Bearer token-logout")
+                .header("X-User-Id", "uid-ajeno")
+                .exchange()
+                .expectStatus().isNoContent();
+
+        RecordedRequest req = mockDownstream.takeRequest(5, TimeUnit.SECONDS);
+        assertThat(req).isNotNull();
+        assertThat(req.getHeaders().values("X-User-Id")).containsExactly("uid-logout");
+    }
+
+    /** CA-1.8.2: sin token no se cierra la sesión de nadie y el destino no recibe nada. */
+    @Test
+    void logoutAllRoute_withoutToken_returns401WithoutReachingDownstream() {
+        int before = mockDownstream.getRequestCount();
+
+        webTestClient.post().uri("/api/v1/auth/logout-all")
+                .exchange()
+                .expectStatus().isUnauthorized()
+                .expectHeader().valueEquals("Content-Type", "application/json;charset=UTF-8")
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("AUTH_REQUIRED")
+                .jsonPath("$.message").isEqualTo("Token de acceso requerido");
+
+        assertThat(mockDownstream.getRequestCount()).isEqualTo(before);
+    }
+
+    /** Una cuenta con el correo sin verificar tampoco usa esta ruta: 403 y el destino no recibe nada. */
+    @Test
+    void logoutAllRoute_unverifiedEmail_returns403WithoutReachingDownstream() throws Exception {
+        FirebaseToken token = mockToken("uid-sin-verificar", Map.of("email_verified", false));
+        verifyAs("token-logout-sin-verificar", token);
+        int before = mockDownstream.getRequestCount();
+
+        webTestClient.post().uri("/api/v1/auth/logout-all")
+                .header("Authorization", "Bearer token-logout-sin-verificar")
+                .exchange()
+                .expectStatus().isForbidden()
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("EMAIL_NOT_VERIFIED");
+
+        assertThat(mockDownstream.getRequestCount()).isEqualTo(before);
+    }
+
     // ── Utilidad ─────────────────────────────────────────────────────────────
 
     /** Comprueba el 401 «Token de acceso inválido» para un rechazo de Firebase y que el destino no recibe nada. */

@@ -32,6 +32,12 @@ spring:
               predicates:
                 - Path=/api/v1/users/**
 
+            # Cierre de sesión en todos los dispositivos (Cuentas). Caso A: no entra en PUBLIC_ROUTES.
+            - id: cameia-cuentas-auth
+              uri: ${CAMEIA_CUENTAS_URL}
+              predicates:
+                - Path=/api/v1/auth/**
+
             - id: cameia-perfil
               uri: ${CAMEIA_PERFIL_URL}
               predicates:
