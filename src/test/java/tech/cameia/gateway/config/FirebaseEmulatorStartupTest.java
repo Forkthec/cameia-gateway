@@ -9,8 +9,11 @@ import com.google.firebase.auth.FirebaseAuth;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.SpringApplication;
+import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.beans.factory.support.BeanDefinitionRegistry;
+import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
 import org.springframework.context.annotation.Bean;
 
 import reactor.core.publisher.Mono;
@@ -82,6 +85,32 @@ class FirebaseEmulatorStartupTest {
         }
     }
 
+    /**
+     * Quita del contexto la comprobación del permiso de lectura de usuarios.
+     *
+     * <p>Aquí la dirección del emulador llega como propiedad de Spring y no como variable de entorno del proceso, que es la
+     * única que lee el Admin SDK. Con la comprobación activa, la prueba llamaría al Firebase real de Google con credenciales
+     * ficticias. La comprobación tiene sus propias pruebas.</p>
+     */
+    @TestConfiguration
+    static class WithoutPermissionCheckConfig {
+
+        @Bean
+        static BeanDefinitionRegistryPostProcessor removePermissionCheck() {
+            return new BeanDefinitionRegistryPostProcessor() {
+                @Override
+                public void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) {
+                    registry.removeBeanDefinition("firebaseRevocationPermissionCheck");
+                }
+
+                @Override
+                public void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory) {
+                    // Sin cambios: solo se quita la definición del registro
+                }
+            };
+        }
+    }
+
     private ConfigurableApplicationContext start(String... extraArgs) {
         String[] baseArgs = {
                 "--server.port=0",
@@ -94,6 +123,7 @@ class FirebaseEmulatorStartupTest {
         };
         String[] args = Stream.concat(Arrays.stream(baseArgs), Arrays.stream(extraArgs))
                 .toArray(String[]::new);
-        return new SpringApplication(GatewayApplication.class, FakeOidcSourceConfig.class).run(args);
+        return new SpringApplication(GatewayApplication.class, FakeOidcSourceConfig.class, WithoutPermissionCheckConfig.class)
+                .run(args);
     }
 }
