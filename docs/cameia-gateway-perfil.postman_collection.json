@@ -635,6 +635,689 @@
           }
         }
       ]
+    },
+    {
+      "name": "Revocación de sesiones (local)",
+      "description": "Cierre de sesión en todos los dispositivos (POST /api/v1/auth/logout-all) con el emulador de Firebase Auth y Cuentas. Ejecutar en orden. Cómo correrla: 1) docker network create cameia-net (una vez). 2) En cameia-gateway (esta rama): .env con FIREBASE_PROJECT_ID=demo-cameia y FIREBASE_AUTH_EMULATOR_HOST=cameia-firebase-emulator:9099; docker compose up --build -d; el log debe mostrar «Permiso de lectura de usuarios de Firebase confirmado». 3) En cameia-cuentas (rama CM-291): .env con el mismo proyecto y FIREBASE_AUTH_EMULATOR_HOST=cameia-firebase-emulator:9099; docker compose up --build -d. 4) npx newman run docs/cameia-gateway-perfil.postman_collection.json --folder \"Revocación de sesiones (local)\" --reporters cli,junit --reporter-junit-export target/newman-revocacion.xml. 5) Al terminar: docker volume rm cameia-gateway_firebase-emulator-data para no dejar usuarios de prueba.",
+      "auth": {
+        "type": "noauth"
+      },
+      "item": [
+        {
+          "name": "G-00 · registro público de la cuenta",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.collectionVariables.set('logoutEmail', 'prueba+' + Date.now() + '-g@ejemplo.test');"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('logoutUid', pm.response.json().firebaseUid);",
+                  "pm.test('Responde en menos de 2 s', () => pm.expect(pm.response.responseTime).to.be.below(2000));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/users",
+            "description": "Crea la cuenta sintética por el Gateway (ruta pública) y guarda su uid.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Ana\",\n  \"lastName\": \"Pérez\",\n  \"birthDate\": \"12/04/1995\",\n  \"email\": \"{{logoutEmail}}\",\n  \"password\": \"frase secreta larga\",\n  \"pronoun\": \"SHE\"\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "G-01 · correo verificado en el emulador",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer owner"
+              }
+            ],
+            "url": "{{emulatorUrl}}/identitytoolkit.googleapis.com/v1/projects/{{firebaseProjectId}}/accounts:update",
+            "description": "Marca el correo como verificado en el emulador (el administrador del emulador usa Bearer owner).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"localId\":\"{{logoutUid}}\",\"emailVerified\":true}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "G-01b · ingreso y token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('logoutToken', pm.response.json().idToken);",
+                  "pm.test('idToken guardado', () => pm.expect(pm.collectionVariables.get('logoutToken')).to.be.a('string').and.not.empty);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{emulatorUrl}}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=fake-api-key",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"{{logoutEmail}}\",\"password\":\"frase secreta larga\",\"returnSecureToken\":true}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "G-02 · 200 con la sesión vigente (CA-1.8.12)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Responde en menos de 2 s', () => pm.expect(pm.response.responseTime).to.be.below(2000));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/users/me",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{logoutToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "G-03 · 401 sin token (CA-1.8.2)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Content-Type con charset UTF-8', () => pm.expect((pm.response.headers.get('Content-Type') || '').toLowerCase()).to.include('charset=utf-8'));",
+                  "pm.test('Código AUTH_REQUIRED', () => pm.expect(pm.response.json().code).to.eql('AUTH_REQUIRED'));",
+                  "pm.test('Mensaje', () => pm.expect(pm.response.json().message).to.eql('Token de acceso requerido'));",
+                  "pm.test('Responde en menos de 2 s', () => pm.expect(pm.response.responseTime).to.be.below(2000));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/auth/logout-all",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "G-05 · 204 cierra la sesión en todos los dispositivos (G-04 es su espera)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// G-04: Firebase compara segundos; se espera para que la revocación caiga después de la emisión del token",
+                  "setTimeout(() => {}, 1100);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));",
+                  "pm.test('Cuerpo vacío', () => pm.expect(pm.response.text()).to.eql(''));",
+                  "pm.test('Responde en menos de 2 s', () => pm.expect(pm.response.responseTime).to.be.below(2000));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/auth/logout-all",
+            "description": "CA-1.8.1 y CA-1.8.2: el Gateway verifica el token y reenvía a Cuentas con la identidad del token.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{logoutToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "G-06 · 401 con el mismo token (CA-1.8.9)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Content-Type con charset UTF-8', () => pm.expect((pm.response.headers.get('Content-Type') || '').toLowerCase()).to.include('charset=utf-8'));",
+                  "pm.test('Código AUTH_REQUIRED', () => pm.expect(pm.response.json().code).to.eql('AUTH_REQUIRED'));",
+                  "pm.test('Mensaje', () => pm.expect(pm.response.json().message).to.eql('Token de acceso inválido'));",
+                  "pm.test('Responde en menos de 2 s', () => pm.expect(pm.response.responseTime).to.be.below(2000));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/users/me",
+            "description": "El token anterior a la revocación deja de servir.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{logoutToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "G-07 · espera 1,1 s y nuevo ingreso",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "setTimeout(() => {}, 1100); // la sesión nueva debe emitirse en un segundo posterior a la revocación"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('logoutToken', pm.response.json().idToken);",
+                  "pm.test('idToken guardado', () => pm.expect(pm.collectionVariables.get('logoutToken')).to.be.a('string').and.not.empty);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{emulatorUrl}}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=fake-api-key",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"{{logoutEmail}}\",\"password\":\"frase secreta larga\",\"returnSecureToken\":true}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "G-07b · 200 con la sesión nueva",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Responde en menos de 2 s', () => pm.expect(pm.response.responseTime).to.be.below(2000));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/users/me",
+            "description": "Una sesión nueva después de cerrar todas funciona.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{logoutToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "G-08 · cuenta deshabilitada en el emulador",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer owner"
+              }
+            ],
+            "url": "{{emulatorUrl}}/identitytoolkit.googleapis.com/v1/projects/{{firebaseProjectId}}/accounts:update",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"localId\":\"{{logoutUid}}\",\"disableUser\":true}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "G-08b · 401 con la cuenta deshabilitada (CA-1.8.10)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Content-Type con charset UTF-8', () => pm.expect((pm.response.headers.get('Content-Type') || '').toLowerCase()).to.include('charset=utf-8'));",
+                  "pm.test('Código AUTH_REQUIRED', () => pm.expect(pm.response.json().code).to.eql('AUTH_REQUIRED'));",
+                  "pm.test('Mensaje', () => pm.expect(pm.response.json().message).to.eql('Token de acceso inválido'));",
+                  "pm.test('Responde en menos de 2 s', () => pm.expect(pm.response.responseTime).to.be.below(2000));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/users/me",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{logoutToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "G-09 · registro de la segunda cuenta",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.collectionVariables.set('deleteEmail', 'prueba+' + Date.now() + '-g@ejemplo.test');"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('deleteUid', pm.response.json().firebaseUid);",
+                  "pm.test('Responde en menos de 2 s', () => pm.expect(pm.response.responseTime).to.be.below(2000));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/users",
+            "description": "Segunda cuenta, que se eliminará.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Ana\",\n  \"lastName\": \"Pérez\",\n  \"birthDate\": \"12/04/1995\",\n  \"email\": \"{{deleteEmail}}\",\n  \"password\": \"frase secreta larga\",\n  \"pronoun\": \"SHE\"\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "G-09a · correo verificado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer owner"
+              }
+            ],
+            "url": "{{emulatorUrl}}/identitytoolkit.googleapis.com/v1/projects/{{firebaseProjectId}}/accounts:update",
+            "description": "Marca el correo como verificado en el emulador (el administrador del emulador usa Bearer owner).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"localId\":\"{{deleteUid}}\",\"emailVerified\":true}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "G-09b · ingreso y token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('deleteToken', pm.response.json().idToken);",
+                  "pm.test('idToken guardado', () => pm.expect(pm.collectionVariables.get('deleteToken')).to.be.a('string').and.not.empty);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{emulatorUrl}}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=fake-api-key",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"{{deleteEmail}}\",\"password\":\"frase secreta larga\",\"returnSecureToken\":true}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "G-09c · cuenta eliminada en el emulador",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer owner"
+              }
+            ],
+            "url": "{{emulatorUrl}}/identitytoolkit.googleapis.com/v1/projects/{{firebaseProjectId}}/accounts:delete",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"localId\":\"{{deleteUid}}\"}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "G-09d · 401 con la cuenta eliminada (CA-1.8.11)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Content-Type con charset UTF-8', () => pm.expect((pm.response.headers.get('Content-Type') || '').toLowerCase()).to.include('charset=utf-8'));",
+                  "pm.test('Código AUTH_REQUIRED', () => pm.expect(pm.response.json().code).to.eql('AUTH_REQUIRED'));",
+                  "pm.test('Mensaje', () => pm.expect(pm.response.json().message).to.eql('Token de acceso inválido'));",
+                  "pm.test('Responde en menos de 2 s', () => pm.expect(pm.response.responseTime).to.be.below(2000));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/users/me",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{deleteToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "G-10 · registro de la tercera cuenta (sin verificar)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.collectionVariables.set('unverifiedEmail', 'prueba+' + Date.now() + '-g@ejemplo.test');"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('unverifiedUid', pm.response.json().firebaseUid);",
+                  "pm.test('Responde en menos de 2 s', () => pm.expect(pm.response.responseTime).to.be.below(2000));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/users",
+            "description": "Tercera cuenta: no se verifica su correo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Ana\",\n  \"lastName\": \"Pérez\",\n  \"birthDate\": \"12/04/1995\",\n  \"email\": \"{{unverifiedEmail}}\",\n  \"password\": \"frase secreta larga\",\n  \"pronoun\": \"SHE\"\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "G-10a · ingreso y token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('unverifiedToken', pm.response.json().idToken);",
+                  "pm.test('idToken guardado', () => pm.expect(pm.collectionVariables.get('unverifiedToken')).to.be.a('string').and.not.empty);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{emulatorUrl}}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=fake-api-key",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"{{unverifiedEmail}}\",\"password\":\"frase secreta larga\",\"returnSecureToken\":true}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "G-10b · 403 con el correo sin verificar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('Content-Type con charset UTF-8', () => pm.expect((pm.response.headers.get('Content-Type') || '').toLowerCase()).to.include('charset=utf-8'));",
+                  "pm.test('Código EMAIL_NOT_VERIFIED', () => pm.expect(pm.response.json().code).to.eql('EMAIL_NOT_VERIFIED'));",
+                  "pm.test('Mensaje', () => pm.expect(pm.response.json().message).to.eql('Tu correo aún no está verificado.'));",
+                  "pm.test('Responde en menos de 2 s', () => pm.expect(pm.response.responseTime).to.be.below(2000));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/auth/logout-all",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{unverifiedToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
     }
   ],
   "variable": [
@@ -646,6 +1329,16 @@
     { "key": "skillId",      "value": "",                      "type": "string" },
     { "key": "educationId",  "value": "",                      "type": "string" },
     { "key": "emulatorUrl", "value": "http://localhost:9099", "type": "string" },
-    { "key": "idToken",      "value": "",                      "type": "string" }
+    { "key": "idToken",      "value": "",                      "type": "string" },
+    { "key": "firebaseProjectId", "value": "demo-cameia",      "type": "string" },
+    { "key": "logoutEmail", "value": "", "type": "string" },
+    { "key": "logoutUid", "value": "", "type": "string" },
+    { "key": "logoutToken", "value": "", "type": "string" },
+    { "key": "deleteEmail", "value": "", "type": "string" },
+    { "key": "deleteUid", "value": "", "type": "string" },
+    { "key": "deleteToken", "value": "", "type": "string" },
+    { "key": "unverifiedEmail", "value": "", "type": "string" },
+    { "key": "unverifiedUid", "value": "", "type": "string" },
+    { "key": "unverifiedToken", "value": "", "type": "string" }
   ]
 }

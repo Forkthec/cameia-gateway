@@ -41,6 +41,15 @@ public class FirebaseConfig {
     private static final String CLOUD_RUN_SERVICE_VARIABLE = "K_SERVICE";
     private static final String DEPLOY_PROFILE = "prod";
 
+    /** Espera máxima para abrir la conexión con Firebase; la misma de Cuentas. */
+    static final int CONNECT_TIMEOUT_MS = 3_000;
+
+    /**
+     * Espera máxima para leer la respuesta de Firebase; la misma de Cuentas. Con la verificación de revocación, cada petición
+     * privada hace una lectura de red: sin este tope, Firebase lento dejaría la petición colgada.
+     */
+    static final int READ_TIMEOUT_MS = 5_000;
+
     private static final Logger log = LoggerFactory.getLogger(FirebaseConfig.class);
 
     private final String firebaseProjectId;
@@ -58,6 +67,8 @@ public class FirebaseConfig {
             FirebaseOptions options = FirebaseOptions.builder()
                     .setCredentials(resolveCredentials())
                     .setProjectId(firebaseProjectId)
+                    .setConnectTimeout(CONNECT_TIMEOUT_MS)
+                    .setReadTimeout(READ_TIMEOUT_MS)
                     .build();
             FirebaseApp.initializeApp(options);
         }

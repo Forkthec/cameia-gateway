@@ -1,5 +1,7 @@
 package tech.cameia.gateway.filter;
 
+import com.google.firebase.ErrorCode;
+import com.google.firebase.auth.AuthErrorCode;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
 import com.google.firebase.auth.FirebaseToken;
@@ -17,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -37,10 +40,13 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -118,7 +124,7 @@ class FirebaseAuthGlobalFilterTest {
         FirebaseToken token = mockToken("uid-abc123",
                 Map.of("plan", "PREMIUM", "roles", List.of("premium")));
         when(token.getEmail()).thenReturn("ana@cameia.tech");
-        when(firebaseAuth.verifyIdToken("token-valido")).thenReturn(token);
+        when(firebaseAuth.verifyIdToken("token-valido", true)).thenReturn(token);
 
         mockDownstream.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
 
@@ -150,7 +156,7 @@ class FirebaseAuthGlobalFilterTest {
     @Test
     void clientIdentityHeader_isReplacedByTokenUid() throws Exception {
         FirebaseToken token = mockToken("uid-legitimo", Map.of());
-        when(firebaseAuth.verifyIdToken("token-suplantacion")).thenReturn(token);
+        when(firebaseAuth.verifyIdToken("token-suplantacion", true)).thenReturn(token);
 
         mockDownstream.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
 
@@ -171,7 +177,7 @@ class FirebaseAuthGlobalFilterTest {
     @Test
     void validTokenWithoutPlan_omitsXUserPlanHeader() throws Exception {
         FirebaseToken token = mockToken("uid-sin-plan", Map.of());
-        when(firebaseAuth.verifyIdToken("token-sin-plan")).thenReturn(token);
+        when(firebaseAuth.verifyIdToken("token-sin-plan", true)).thenReturn(token);
 
         mockDownstream.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
 
@@ -195,7 +201,7 @@ class FirebaseAuthGlobalFilterTest {
     @Test
     void rolesClaimAsList_isJoinedWithCommas() throws Exception {
         FirebaseToken token = mockToken("uid-roles-lista", Map.of("roles", List.of("free", "premium")));
-        when(firebaseAuth.verifyIdToken("token-roles-lista")).thenReturn(token);
+        when(firebaseAuth.verifyIdToken("token-roles-lista", true)).thenReturn(token);
 
         mockDownstream.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
 
@@ -218,7 +224,7 @@ class FirebaseAuthGlobalFilterTest {
     @Test
     void rolesClaimAsString_isPropagatedUnchanged() throws Exception {
         FirebaseToken token = mockToken("uid-roles-cadena", Map.of("roles", "PREMIUM"));
-        when(firebaseAuth.verifyIdToken("token-roles-cadena")).thenReturn(token);
+        when(firebaseAuth.verifyIdToken("token-roles-cadena", true)).thenReturn(token);
 
         mockDownstream.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
 
@@ -241,7 +247,7 @@ class FirebaseAuthGlobalFilterTest {
     @Test
     void tokenWithoutEmail_omitsXUserEmailHeader() throws Exception {
         FirebaseToken token = mockToken("uid-sin-email", Map.of());
-        when(firebaseAuth.verifyIdToken("token-sin-email")).thenReturn(token);
+        when(firebaseAuth.verifyIdToken("token-sin-email", true)).thenReturn(token);
 
         mockDownstream.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
 
@@ -287,15 +293,17 @@ class FirebaseAuthGlobalFilterTest {
                 .expectStatus().isUnauthorized();
 
         assertThat(output.getOut())
-                .contains("Solicitud rechazada por autenticación [requestId=req-rechazo-123]");
+                .contains("Solicitud rechazada por autenticación [requestId=req-rechazo-123]")
+                .contains("[causa=TOKEN_MISSING]");
     }
 
     // ── Caso 4: token inválido ───────────────────────────────────────────────
 
     @Test
     void invalidToken_returns401AndUtf8Charset() throws Exception {
-        when(firebaseAuth.verifyIdToken("token-invalido"))
-                .thenThrow(mock(FirebaseAuthException.class));
+        when(firebaseAuth.verifyIdToken("token-invalido", true))
+                .thenThrow(new FirebaseAuthException(ErrorCode.INVALID_ARGUMENT, "token inválido", null, null,
+                        AuthErrorCode.INVALID_ID_TOKEN));
 
         webTestClient.get()
                 .uri("/api/v1/profiles/me")
@@ -352,7 +360,7 @@ class FirebaseAuthGlobalFilterTest {
      */
     @Test
     void firebaseIllegalArgument_returns401AndUtf8Charset() throws Exception {
-        when(firebaseAuth.verifyIdToken("token-malformado"))
+        when(firebaseAuth.verifyIdToken("token-malformado", true))
                 .thenThrow(new IllegalArgumentException("token malformado"));
 
         webTestClient.get()
@@ -373,7 +381,7 @@ class FirebaseAuthGlobalFilterTest {
      */
     @Test
     void firebaseUnexpectedFailure_isNotTreatedAsTokenRejection() throws Exception {
-        when(firebaseAuth.verifyIdToken("token-sin-red"))
+        when(firebaseAuth.verifyIdToken("token-sin-red", true))
                 .thenThrow(new IllegalStateException("sin conexión con Firebase"));
 
         webTestClient.get()
@@ -448,7 +456,7 @@ class FirebaseAuthGlobalFilterTest {
     @Test
     void clientRequestId_isPreservedToDownstream() throws Exception {
         FirebaseToken token = mockToken("uid-trazado", Map.of());
-        when(firebaseAuth.verifyIdToken("token-trazado")).thenReturn(token);
+        when(firebaseAuth.verifyIdToken("token-trazado", true)).thenReturn(token);
 
         mockDownstream.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
 
@@ -475,7 +483,7 @@ class FirebaseAuthGlobalFilterTest {
     @Test
     void downstreamEchoedRequestId_isNotDuplicatedInResponse() throws Exception {
         FirebaseToken token = mockToken("uid-eco", Map.of());
-        when(firebaseAuth.verifyIdToken("token-eco")).thenReturn(token);
+        when(firebaseAuth.verifyIdToken("token-eco", true)).thenReturn(token);
 
         mockDownstream.enqueue(new MockResponse().setResponseCode(200)
                 .setHeader("X-Request-Id", "abc").setBody("ok"));
@@ -622,7 +630,7 @@ class FirebaseAuthGlobalFilterTest {
     @ValueSource(booleans = {true, false})
     void emailVerifiedClaim_isPropagatedToDownstream(boolean claimValue) throws Exception {
         FirebaseToken token = mockToken("uid-verificacion", Map.of("email_verified", claimValue));
-        when(firebaseAuth.verifyIdToken("token-" + claimValue)).thenReturn(token);
+        when(firebaseAuth.verifyIdToken("token-" + claimValue, true)).thenReturn(token);
 
         mockDownstream.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
 
@@ -644,7 +652,7 @@ class FirebaseAuthGlobalFilterTest {
     @Test
     void tokenWithoutEmailVerifiedClaim_omitsHeader() throws Exception {
         FirebaseToken token = mockToken("uid-sin-claim", Map.of());
-        when(firebaseAuth.verifyIdToken("token-sin-claim-verificacion")).thenReturn(token);
+        when(firebaseAuth.verifyIdToken("token-sin-claim-verificacion", true)).thenReturn(token);
 
         mockDownstream.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
 
@@ -666,7 +674,7 @@ class FirebaseAuthGlobalFilterTest {
     @Test
     void clientEmailVerifiedHeader_isReplacedByTokenClaim() throws Exception {
         FirebaseToken token = mockToken("uid-suplanta-verificacion", Map.of("email_verified", false));
-        when(firebaseAuth.verifyIdToken("token-suplanta-verificacion")).thenReturn(token);
+        when(firebaseAuth.verifyIdToken("token-suplanta-verificacion", true)).thenReturn(token);
 
         mockDownstream.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
 
@@ -729,7 +737,7 @@ class FirebaseAuthGlobalFilterTest {
     void verificationRoute_withValidToken_reachesAccountsWithIdentityContract() throws Exception {
         FirebaseToken token = mockToken("uid-activa", Map.of("email_verified", true, "roles", List.of("free")));
         when(token.getEmail()).thenReturn("ana@cameia.tech");
-        when(firebaseAuth.verifyIdToken("token-activa")).thenReturn(token);
+        when(firebaseAuth.verifyIdToken("token-activa", true)).thenReturn(token);
 
         mockDownstream.enqueue(new MockResponse().setResponseCode(204));
 
@@ -876,7 +884,7 @@ class FirebaseAuthGlobalFilterTest {
         assertThat(req.getHeader("Authorization")).isNullOrEmpty();
         assertThat(req.getHeader("X-User-Id")).isNull();
         assertThat(req.getHeader("X-User-Email-Verified")).isNull();
-        verify(firebaseAuth, never()).verifyIdToken(anyString());
+        verify(firebaseAuth, never()).verifyIdToken(anyString(), anyBoolean());
     }
 
     /** REQ-EV-06: la cabecera del cliente no cambia la decisión; manda el claim. */
@@ -923,7 +931,8 @@ class FirebaseAuthGlobalFilterTest {
     /** REQ-EV-09: sin token o con un token que Firebase rechaza, el código sigue siendo 401. */
     @Test
     void invalidOrMissingToken_stillReturns401() throws Exception {
-        when(firebaseAuth.verifyIdToken("token-rechazado")).thenThrow(mock(FirebaseAuthException.class));
+        when(firebaseAuth.verifyIdToken("token-rechazado", true)).thenThrow(new FirebaseAuthException(
+                ErrorCode.INVALID_ARGUMENT, "token inválido", null, null, AuthErrorCode.INVALID_ID_TOKEN));
 
         webTestClient.get().uri("/api/v1/profiles/me").exchange()
                 .expectStatus().isUnauthorized()
@@ -948,12 +957,234 @@ class FirebaseAuthGlobalFilterTest {
         assertThat(applicationContext.getBeansOfType(OidcSigningGlobalFilter.class)).isEmpty();
     }
 
+    // ── Revocación de sesiones y clasificación de los fallos de Firebase ─────
+
+    /**
+     * Un fallo de Firebase al confirmar el token (no responde, sin permiso, sin red o sin claves públicas) no es culpa de la
+     * persona: responde 503 {@code AUTH_UNAVAILABLE} y no 401, que cerraría la sesión de todo el mundo durante una caída.
+     */
+    @ParameterizedTest
+    @MethodSource("verificationFailures")
+    void revocationLookupFailure_returns503AuthUnavailable(FirebaseAuthException failure) throws Exception {
+        doThrow(failure).when(firebaseAuth).verifyIdToken("token-sin-confirmar", true);
+        int before = mockDownstream.getRequestCount();
+
+        webTestClient.get().uri("/api/v1/profiles/me")
+                .header("Authorization", "Bearer token-sin-confirmar")
+                .exchange()
+                .expectStatus().isEqualTo(503)
+                .expectHeader().valueEquals("Content-Type", "application/json;charset=UTF-8")
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("AUTH_UNAVAILABLE")
+                .jsonPath("$.message").isEqualTo("Servicio de autenticación no disponible");
+
+        assertThat(mockDownstream.getRequestCount()).isEqualTo(before);
+    }
+
+    static Stream<FirebaseAuthException> verificationFailures() {
+        return Stream.of(
+                new FirebaseAuthException(ErrorCode.PERMISSION_DENIED, "sin permiso", null, null, null),
+                new FirebaseAuthException(ErrorCode.UNAVAILABLE, "caído", null, null, null),
+                new FirebaseAuthException(ErrorCode.DEADLINE_EXCEEDED, "lento", null, null, null),
+                new FirebaseAuthException(ErrorCode.RESOURCE_EXHAUSTED, "cuota agotada", null, null, null),
+                new FirebaseAuthException(ErrorCode.INTERNAL, "fallo de Firebase", null, null, null),
+                new FirebaseAuthException(ErrorCode.UNKNOWN, "sin red", new java.net.ConnectException("rechazada"), null, null),
+                new FirebaseAuthException(ErrorCode.UNKNOWN, "sin claves", null, null, AuthErrorCode.CERTIFICATE_FETCH_FAILED));
+    }
+
+    /** CA-1.8.9: un token de una sesión cerrada en todos los dispositivos recibe 401 y no llega al destino. */
+    @Test
+    void revokedToken_returns401WithoutReachingDownstream() throws Exception {
+        assertRejectedWith401("token-revocado", ErrorCode.INVALID_ARGUMENT, AuthErrorCode.REVOKED_ID_TOKEN);
+    }
+
+    /** CA-1.8.10: un token de una cuenta deshabilitada recibe 401 y no llega al destino. */
+    @Test
+    void disabledUser_returns401WithoutReachingDownstream() throws Exception {
+        assertRejectedWith401("token-deshabilitado", ErrorCode.INVALID_ARGUMENT, AuthErrorCode.USER_DISABLED);
+    }
+
+    /** CA-1.8.11: un token de una cuenta eliminada recibe 401 y no llega al destino. */
+    @Test
+    void deletedUser_returns401WithoutReachingDownstream() throws Exception {
+        assertRejectedWith401("token-eliminado", ErrorCode.NOT_FOUND, AuthErrorCode.USER_NOT_FOUND);
+    }
+
+    /** Un token emitido para otro tenant recibe 401 y no llega al destino. */
+    @Test
+    void tenantMismatch_returns401WithoutReachingDownstream() throws Exception {
+        assertRejectedWith401("token-otro-tenant", ErrorCode.INVALID_ARGUMENT, AuthErrorCode.TENANT_ID_MISMATCH);
+    }
+
+    /** Un token vencido sigue recibiendo 401: es culpa del token. */
+    @Test
+    void expiredToken_returns401WithoutReachingDownstream() throws Exception {
+        assertRejectedWith401("token-vencido", ErrorCode.INVALID_ARGUMENT, AuthErrorCode.EXPIRED_ID_TOKEN);
+    }
+
+    /** CA-1.8.12: cada petición privada verifica el token con la comprobación de revocación activada. */
+    @Test
+    void validToken_isVerifiedWithRevocationCheck() throws Exception {
+        FirebaseToken token = mockToken("uid-vigente", Map.of("email_verified", true));
+        verifyAs("token-vigente", token);
+        mockDownstream.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
+
+        webTestClient.get().uri("/api/v1/profiles/me")
+                .header("Authorization", "Bearer token-vigente")
+                .exchange()
+                .expectStatus().isOk();
+
+        verify(firebaseAuth).verifyIdToken("token-vigente", true);
+        verify(firebaseAuth, never()).verifyIdToken("token-vigente");
+        assertThat(mockDownstream.takeRequest(5, TimeUnit.SECONDS)).isNotNull();
+    }
+
+    /** La causa del 401 queda en el log con el requestId, sin el token. */
+    @Test
+    void revokedToken_isLoggedWithCauseWithoutToken(CapturedOutput output) throws Exception {
+        when(firebaseAuth.verifyIdToken("token-revocado-secreto", true)).thenThrow(new FirebaseAuthException(
+                ErrorCode.INVALID_ARGUMENT, "revocado", null, null, AuthErrorCode.REVOKED_ID_TOKEN));
+
+        webTestClient.get().uri("/api/v1/profiles/me")
+                .header("Authorization", "Bearer token-revocado-secreto")
+                .header("X-Request-Id", "req-revocado-1")
+                .exchange()
+                .expectStatus().isUnauthorized();
+
+        assertThat(output.getOut())
+                .contains("[requestId=req-revocado-1] [causa=REVOKED_ID_TOKEN]")
+                .doesNotContain("token-revocado-secreto");
+    }
+
+    /** Una caída de Firebase queda en ERROR con el código y el requestId. */
+    @Test
+    void authUnavailable_isLoggedAtErrorWithRequestId(CapturedOutput output) throws Exception {
+        when(firebaseAuth.verifyIdToken("token-caido", true)).thenThrow(
+                new FirebaseAuthException(ErrorCode.UNAVAILABLE, "caído", null, null, null));
+
+        webTestClient.get().uri("/api/v1/profiles/me")
+                .header("Authorization", "Bearer token-caido")
+                .header("X-Request-Id", "req-caido-1")
+                .exchange()
+                .expectStatus().isEqualTo(503)
+                .expectHeader().valueEquals("X-Request-Id", "req-caido-1");
+
+        String linea = output.getOut().lines()
+                .filter(l -> l.contains("code=AUTH_UNAVAILABLE, requestId=req-caido-1"))
+                .findFirst().orElseThrow();
+        assertThat(linea).contains("ERROR").doesNotContain("token-caido");
+    }
+
+    /** Un token con formato inválido deja la causa TOKEN_MALFORMED en el log. */
+    @Test
+    void malformedToken_isLoggedAsTokenMalformed(CapturedOutput output) throws Exception {
+        when(firebaseAuth.verifyIdToken("token-roto", true)).thenThrow(new IllegalArgumentException("token roto"));
+
+        webTestClient.get().uri("/api/v1/profiles/me")
+                .header("Authorization", "Bearer token-roto")
+                .exchange()
+                .expectStatus().isUnauthorized();
+
+        assertThat(output.getOut()).contains("[causa=TOKEN_MALFORMED]");
+    }
+
+    // ── Ruta de cierre de sesión en todos los dispositivos (Caso A hacia Cuentas) ──
+
+    /** CA-1.8.1 y CA-1.8.2: con token válido, Cuentas recibe la identidad del token y no el Authorization del cliente. */
+    @Test
+    void logoutAllRoute_withValidToken_reachesAccountsWithIdentity() throws Exception {
+        FirebaseToken token = mockToken("uid-logout", Map.of("email_verified", true));
+        verifyAs("token-logout", token);
+        mockDownstream.enqueue(new MockResponse().setResponseCode(204));
+
+        webTestClient.post().uri("/api/v1/auth/logout-all")
+                .header("Authorization", "Bearer token-logout")
+                .exchange()
+                .expectStatus().isNoContent();
+
+        RecordedRequest req = mockDownstream.takeRequest(5, TimeUnit.SECONDS);
+        assertThat(req).isNotNull();
+        assertThat(req.getMethod()).isEqualTo("POST");
+        assertThat(req.getPath()).isEqualTo("/api/v1/auth/logout-all");
+        assertThat(req.getHeader("X-User-Id")).isEqualTo("uid-logout");
+        assertThat(req.getHeader("Authorization")).isNullOrEmpty();
+    }
+
+    /** Un X-User-Id escrito por el cliente nunca llega a Cuentas: manda el uid del token. */
+    @Test
+    void logoutAllRoute_clientIdentityHeader_isReplacedByTokenUid() throws Exception {
+        FirebaseToken token = mockToken("uid-logout", Map.of("email_verified", true));
+        verifyAs("token-logout", token);
+        mockDownstream.enqueue(new MockResponse().setResponseCode(204));
+
+        webTestClient.post().uri("/api/v1/auth/logout-all")
+                .header("Authorization", "Bearer token-logout")
+                .header("X-User-Id", "uid-ajeno")
+                .exchange()
+                .expectStatus().isNoContent();
+
+        RecordedRequest req = mockDownstream.takeRequest(5, TimeUnit.SECONDS);
+        assertThat(req).isNotNull();
+        assertThat(req.getHeaders().values("X-User-Id")).containsExactly("uid-logout");
+    }
+
+    /** CA-1.8.2: sin token no se cierra la sesión de nadie y el destino no recibe nada. */
+    @Test
+    void logoutAllRoute_withoutToken_returns401WithoutReachingDownstream() {
+        int before = mockDownstream.getRequestCount();
+
+        webTestClient.post().uri("/api/v1/auth/logout-all")
+                .exchange()
+                .expectStatus().isUnauthorized()
+                .expectHeader().valueEquals("Content-Type", "application/json;charset=UTF-8")
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("AUTH_REQUIRED")
+                .jsonPath("$.message").isEqualTo("Token de acceso requerido");
+
+        assertThat(mockDownstream.getRequestCount()).isEqualTo(before);
+    }
+
+    /** Una cuenta con el correo sin verificar tampoco usa esta ruta: 403 y el destino no recibe nada. */
+    @Test
+    void logoutAllRoute_unverifiedEmail_returns403WithoutReachingDownstream() throws Exception {
+        FirebaseToken token = mockToken("uid-sin-verificar", Map.of("email_verified", false));
+        verifyAs("token-logout-sin-verificar", token);
+        int before = mockDownstream.getRequestCount();
+
+        webTestClient.post().uri("/api/v1/auth/logout-all")
+                .header("Authorization", "Bearer token-logout-sin-verificar")
+                .exchange()
+                .expectStatus().isForbidden()
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("EMAIL_NOT_VERIFIED");
+
+        assertThat(mockDownstream.getRequestCount()).isEqualTo(before);
+    }
+
     // ── Utilidad ─────────────────────────────────────────────────────────────
+
+    /** Comprueba el 401 «Token de acceso inválido» para un rechazo de Firebase y que el destino no recibe nada. */
+    private void assertRejectedWith401(String idToken, ErrorCode errorCode, AuthErrorCode authErrorCode) throws Exception {
+        when(firebaseAuth.verifyIdToken(idToken, true))
+                .thenThrow(new FirebaseAuthException(errorCode, "rechazado", null, null, authErrorCode));
+        int before = mockDownstream.getRequestCount();
+
+        webTestClient.get().uri("/api/v1/profiles/me")
+                .header("Authorization", "Bearer " + idToken)
+                .exchange()
+                .expectStatus().isUnauthorized()
+                .expectHeader().valueEquals("Content-Type", "application/json;charset=UTF-8")
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("AUTH_REQUIRED")
+                .jsonPath("$.message").isEqualTo("Token de acceso inválido");
+
+        assertThat(mockDownstream.getRequestCount()).isEqualTo(before);
+    }
 
     /** Hace que Firebase acepte {@code idToken} y devuelva {@code token}. */
     private void verifyAs(String idToken, FirebaseToken token) {
         try {
-            when(firebaseAuth.verifyIdToken(idToken)).thenReturn(token);
+            when(firebaseAuth.verifyIdToken(idToken, true)).thenReturn(token);
         } catch (FirebaseAuthException e) {
             throw new IllegalStateException(e);
         }

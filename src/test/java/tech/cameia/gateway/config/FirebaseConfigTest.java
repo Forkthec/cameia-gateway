@@ -120,6 +120,18 @@ class FirebaseConfigTest {
         assertThat(FirebaseApp.getApps()).hasSize(1);
     }
 
+    /** Los tiempos de espera del Admin SDK acotan cada llamada a Firebase, incluida la verificación de revocación. */
+    @Test
+    void firebaseOptions_useConnectAndReadTimeouts() throws IOException {
+        RecordingFirebaseConfig config = configWith(new MockEnvironment()
+                .withProperty(FirebaseConfig.EMULATOR_HOST_VARIABLE, "localhost:9099"));
+
+        config.init();
+
+        assertThat(FirebaseApp.getInstance().getOptions().getConnectTimeout()).isEqualTo(3000);
+        assertThat(FirebaseApp.getInstance().getOptions().getReadTimeout()).isEqualTo(5000);
+    }
+
     private static RecordingFirebaseConfig configWith(Environment environment) {
         return new RecordingFirebaseConfig(environment);
     }

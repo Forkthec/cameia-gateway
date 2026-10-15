@@ -1,5 +1,6 @@
 package tech.cameia.gateway.filter;
 
+import com.google.firebase.auth.AuthErrorCode;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
 import com.google.firebase.auth.FirebaseToken;
@@ -24,6 +25,7 @@ import reactor.core.scheduler.Schedulers;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
+import java.util.EnumSet;
 import java.util.Set;
 import java.util.UUID;
 
@@ -44,6 +46,10 @@ import static java.util.stream.Collectors.joining;
  *       toda cabecera {@code X-User-*} y el {@code Authorization} del cliente: no hay usuario
  *       autenticado y el microservicio no debe creer que lo hay.</li>
  * </ul>
+ *
+ * <p>El token se verifica con comprobación de revocación: una sesión cerrada en todos los dispositivos, una cuenta
+ * deshabilitada o una cuenta eliminada responden {@code 401}. Si Firebase no puede confirmar el token (no responde, agotó el
+ * tiempo, la cuota o los permisos), responde {@code 503 AUTH_UNAVAILABLE} y la sesión de la persona se conserva.
  *
  * <p>Rechaza con {@code 403 EMAIL_NOT_VERIFIED} un token cuyo claim {@code email_verified} es
  * {@code false}, salvo en {@code POST /api/v1/users/me/verification}; la ausencia del claim no bloquea.
@@ -103,6 +109,23 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
 
     /** Código del rechazo por correo sin verificar; lo reserva el contrato del proyecto. */
     static final String EMAIL_NOT_VERIFIED_CODE = "EMAIL_NOT_VERIFIED";
+
+    /** Código del 503 cuando Firebase no pudo confirmar el token; la sesión de la persona se conserva. */
+    static final String AUTH_UNAVAILABLE_CODE = "AUTH_UNAVAILABLE";
+
+    /** Causa registrada cuando falta el token, viene vacío o no usa el esquema Bearer. */
+    static final String CAUSE_TOKEN_MISSING = "TOKEN_MISSING";
+
+    /** Causa registrada cuando Firebase rechaza el formato del token con {@code IllegalArgumentException}. */
+    static final String CAUSE_TOKEN_MALFORMED = "TOKEN_MALFORMED";
+
+    /**
+     * Rechazos que son culpa del token o de la cuenta: la persona debe iniciar sesión de nuevo. Cualquier otro fallo de Firebase
+     * significa que no se pudo confirmar el token, y responder 401 cerraría la sesión de todo el mundo durante una caída.
+     */
+    private static final Set<AuthErrorCode> TOKEN_REJECTIONS = EnumSet.of(
+            AuthErrorCode.INVALID_ID_TOKEN, AuthErrorCode.EXPIRED_ID_TOKEN, AuthErrorCode.REVOKED_ID_TOKEN,
+            AuthErrorCode.USER_DISABLED, AuthErrorCode.USER_NOT_FOUND, AuthErrorCode.TENANT_ID_MISMATCH);
 
     /** Esquema de la cabecera {@code Authorization} que lleva el ID Token de Firebase, con su espacio. */
     private static final String BEARER_PREFIX = "Bearer ";
@@ -239,16 +262,20 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
         String idToken = extractIdToken(exchange);
         if (idToken == null) {
             // REQ-02: se rechaza antes de llamar a Firebase, que con un token vacío lanzaría otra excepción
-            return writeUnauthorized(exchange, "Token de acceso requerido", requestId);
+            return writeUnauthorized(exchange, "Token de acceso requerido", requestId, CAUSE_TOKEN_MISSING);
         }
 
         // El rechazo se captura antes del flatMap: así solo cubre la verificación del token, y un
         // fallo al reenviar al microservicio nunca se confunde con un token inválido (plan §3.4)
-        return Mono.fromCallable(() -> firebaseAuth.verifyIdToken(idToken))
+        return Mono.fromCallable(() -> firebaseAuth.verifyIdToken(idToken, true)) // true: comprueba revocación y cuenta
                 .subscribeOn(Schedulers.boundedElastic())
                 // tras escribir el 401 se completa vacío: el flatMap no corre y nada se reenvía
                 .onErrorResume(this::isTokenRejection,
-                        e -> writeUnauthorized(exchange, "Token de acceso inválido", requestId)
+                        e -> writeUnauthorized(exchange, "Token de acceso inválido", requestId, rejectionCause(e))
+                                .then(Mono.<FirebaseToken>empty()))
+                // cualquier otro fallo de Firebase: no se pudo confirmar el token, y la sesión se conserva
+                .onErrorResume(FirebaseAuthException.class::isInstance,
+                        e -> writeAuthUnavailable(exchange, requestId, (FirebaseAuthException) e)
                                 .then(Mono.<FirebaseToken>empty()))
                 .flatMap(decodedToken -> shouldReject(exchange.getRequest(), decodedToken)
                         ? writeEmailNotVerified(exchange, requestId)
@@ -279,16 +306,33 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
     }
 
     /**
-     * Decide si un fallo de la verificación es culpa del token y merece {@code 401} (REQ-02).
+     * Decide si un fallo de la verificación es culpa del token o de la cuenta y merece {@code 401} (REQ-02).
      *
-     * <p>No abarca {@link Throwable} en bruto: un fallo de red al descargar las claves públicas de
-     * Firebase es un problema del Gateway, no del cliente, y debe seguir llegando al manejador global.
+     * <p>Solo cuentan el formato inválido ({@link IllegalArgumentException}) y los rechazos de Firebase listados en
+     * {@code TOKEN_REJECTIONS}. Cualquier otro {@link FirebaseAuthException} (sin red, sin permiso, sin claves públicas) significa
+     * que Firebase no pudo confirmar el token y se responde {@code 503}; un fallo que no es de Firebase sigue llegando al
+     * manejador global.
      *
      * @param error excepción lanzada al verificar el ID Token
-     * @return {@code true} si es {@link FirebaseAuthException} o {@link IllegalArgumentException}
+     * @return {@code true} si el token o la cuenta deben volver a iniciar sesión
      */
     private boolean isTokenRejection(Throwable error) {
-        return error instanceof FirebaseAuthException || error instanceof IllegalArgumentException;
+        return error instanceof IllegalArgumentException
+                || (error instanceof FirebaseAuthException firebaseError
+                        && TOKEN_REJECTIONS.contains(firebaseError.getAuthErrorCode()));
+    }
+
+    /**
+     * Nombra la causa de un rechazo para el log, sin el token.
+     *
+     * @param error excepción que {@link #isTokenRejection(Throwable)} aceptó
+     * @return {@code TOKEN_MALFORMED} para un formato inválido; el nombre del código de autenticación en los demás casos
+     */
+    private String rejectionCause(Throwable error) {
+        if (error instanceof FirebaseAuthException firebaseError) {
+            return firebaseError.getAuthErrorCode().name();
+        }
+        return CAUSE_TOKEN_MALFORMED;
     }
 
     /**
@@ -481,7 +525,7 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
      *
      * <p>El cuerpo se declara como {@code application/json} con charset UTF-8.
      *
-     * <p>Registra el rechazo en nivel {@code WARN} con su {@code X-Request-Id} (REQ-09). Nunca
+     * <p>Registra el rechazo en nivel {@code WARN} con su {@code X-Request-Id} y su causa (REQ-09). Nunca
      * registra el token ni la cabecera {@code Authorization}. La cabecera {@code X-Request-Id} de la
      * respuesta ya la fijó {@code filter(...)}.
      *
@@ -489,12 +533,32 @@ public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
      * @param message   mensaje en español para el cuerpo de la respuesta; debe ser un texto fijo,
      *                  nunca el mensaje de una excepción
      * @param requestId identificador de trazabilidad que se incluye en el log
+     * @param cause     causa del rechazo que se incluye en el log; solo el nombre de un código, nunca datos del token
      * @return la escritura de la respuesta {@code 401}
      */
-    private Mono<Void> writeUnauthorized(ServerWebExchange exchange, String message, String requestId) {
+    private Mono<Void> writeUnauthorized(ServerWebExchange exchange, String message, String requestId, String cause) {
         // REQ-09: el rechazo queda trazado. Nunca se registra el token ni la cabecera Authorization
-        log.warn("Solicitud rechazada por autenticación [requestId={}]", requestId);
+        log.warn("Solicitud rechazada por autenticación [requestId={}] [causa={}]", requestId, cause);
         return writeError(exchange, HttpStatus.UNAUTHORIZED, "AUTH_REQUIRED", message);
+    }
+
+    /**
+     * Responde {@code 503 AUTH_UNAVAILABLE} y termina el procesamiento: Firebase no pudo confirmar el token, así que no se
+     * sabe si es válido y no se reenvía nada. No es un 401 a propósito: la sesión de la persona sigue vigente.
+     *
+     * <p>Registra el fallo en nivel {@code ERROR} con la traza, el código del error de Firebase y el {@code X-Request-Id}; nunca
+     * el token.
+     *
+     * @param exchange  intercambio HTTP de la solicitud entrante
+     * @param requestId identificador de trazabilidad que se incluye en el log
+     * @param error     fallo de Firebase al confirmar el token
+     * @return la escritura de la respuesta {@code 503}
+     */
+    private Mono<Void> writeAuthUnavailable(ServerWebExchange exchange, String requestId, FirebaseAuthException error) {
+        log.error("No se pudo verificar el token con Firebase [code={}, requestId={}, errorCode={}]",
+                AUTH_UNAVAILABLE_CODE, requestId, error.getErrorCode(), error);
+        return writeError(exchange, HttpStatus.SERVICE_UNAVAILABLE, AUTH_UNAVAILABLE_CODE,
+                "Servicio de autenticación no disponible");
     }
 
     /**

@@ -43,8 +43,9 @@ En código reactivo, máximo dos niveles de anidamiento: se evitan los `flatMap`
 | Clase | Paquete | Qué hace |
 |---|---|---|
 | `GatewayApplication` | raíz | `@SpringBootApplication`, punto de entrada |
-| `FirebaseConfig` | `config` | Inicializa `FirebaseApp` en `@PostConstruct`; falla el arranque si las credenciales son inválidas (fail-fast). Con `FIREBASE_AUTH_EMULATOR_HOST` con valor y fuera de un despliegue usa credenciales ficticias (emulador de Firebase Auth) en vez de las de Google. Con esa variable definida, aunque esté vacía, y `K_SERVICE` o el perfil `prod`, **falla el arranque**: el emulador emite tokens sin firma y el SDK los aceptaría (`specs/CM-190-emulador-firebase-auth/`) |
-| `FirebaseAuthGlobalFilter` | `filter` | Resuelve `X-Request-Id` y lo devuelve en la respuesta. Caso A: valida el Bearer token (`401` si falta, está vacío o Firebase lo rechaza; `403` si el correo no está verificado), borra los `X-User-*` del cliente, emite `X-User-Id`, `X-User-Email`, `X-User-Roles`, `X-User-Plan` y `X-User-Email-Verified` con `set` y elimina `Authorization`. Caso B, por método y ruta exactos (`PUBLIC_ROUTES`, y `DEV_PUBLIC_ROUTES` solo con el perfil `local`): borra los `X-User-*` y el `Authorization` del cliente. Falla el arranque si `local` está activo con `K_SERVICE` definida |
+| `FirebaseConfig` | `config` | Inicializa `FirebaseApp` en `@PostConstruct` con 3 s de conexión y 5 s de lectura; falla el arranque si las credenciales son inválidas (fail-fast). Con `FIREBASE_AUTH_EMULATOR_HOST` con valor y fuera de un despliegue usa credenciales ficticias (emulador de Firebase Auth) en vez de las de Google. Con esa variable definida, aunque esté vacía, y `K_SERVICE` o el perfil `prod`, **falla el arranque**: el emulador emite tokens sin firma y el SDK los aceptaría (`specs/CM-190-emulador-firebase-auth/`) |
+| `FirebaseRevocationPermissionCheck` | `config` | En `@PostConstruct` lee un usuario inexistente; sin permiso (`PERMISSION_DENIED`, `UNAUTHENTICATED`) o con el proyecto equivocado, falla el arranque; ante una caída pasajera solo avisa |
+| `FirebaseAuthGlobalFilter` | `filter` | Resuelve `X-Request-Id` y lo devuelve en la respuesta. Caso A: valida el Bearer token con revocación (`401` si falta, está vacío, Firebase lo rechaza, la sesión fue revocada o la cuenta está deshabilitada o eliminada; `503 AUTH_UNAVAILABLE` si Firebase no puede confirmarlo; `403` si el correo no está verificado), borra los `X-User-*` del cliente, emite `X-User-Id`, `X-User-Email`, `X-User-Roles`, `X-User-Plan` y `X-User-Email-Verified` con `set` y elimina `Authorization`. Caso B, por método y ruta exactos (`PUBLIC_ROUTES`, y `DEV_PUBLIC_ROUTES` solo con el perfil `local`): borra los `X-User-*` y el `Authorization` del cliente. Falla el arranque si `local` está activo con `K_SERVICE` definida |
 | `GlobalErrorHandler` | `exception` | Formatea el error como `{"code":"...","message":"..."}` desde un catálogo cerrado (`AUTH_REQUIRED`, `NOT_FOUND`, `BAD_GATEWAY`, `SERVICE_UNAVAILABLE`, `GATEWAY_TIMEOUT`, `INTERNAL_ERROR`). Nunca copia el mensaje de la excepción: la registra en el log con su `X-Request-Id`. El nivel depende del estado: 5xx `ERROR` con traza; 404 `INFO` y otros 4xx `WARN`, ambos sin traza |
 | `OidcConfig` | `config` | Con `gateway.oidc.signing-enabled=true` crea `GoogleIdTokenSource` y `OidcSigningGlobalFilter`; con `false` no crea ningún bean. La fuente real se apaga en pruebas con `gateway.oidc.google-credentials.enabled=false` |
 | `OidcRequiredInProd` | `config` | Con el perfil `prod`, falla el arranque si la firma OIDC está apagada |
@@ -61,8 +62,8 @@ Son **dos capas independientes**: una mira al navegador (Firebase, solo en Caso 
 
 ### Caso A: endpoint que exige usuario autenticado
 
-1. Extraer y validar el ID Token de Firebase con el Admin SDK: firma, expiración y emisor.
-2. Si el token falta o es inválido, responder `401` con código `AUTH_REQUIRED` **de inmediato**; no se reenvía nada al destino.
+1. Extraer y validar el ID Token de Firebase con el Admin SDK: firma, expiración, emisor y revocación.
+2. Si el token falta o es inválido, responder `401` con código `AUTH_REQUIRED` **de inmediato**; si Firebase no puede confirmarlo, responder `503` con código `AUTH_UNAVAILABLE`. En ambos casos no se reenvía nada al destino.
 3. Si es válido, aplicar la autorización de la ruta (roles y claims) antes de continuar.
 4. Obtener el token OIDC para el microservicio destino y adjuntarlo como `Authorization: Bearer <token>`.
 5. Propagar la identidad en los encabezados `X-User-*` de la sección 4. Como `Authorization` ya lleva el token OIDC, **no se reutiliza para los dos propósitos**.
@@ -106,6 +107,7 @@ Por defecto en local el Gateway usa el emulador (servicio `firebase-emulator` de
 |---|---|---|
 | `/api/v1/profiles/**` | `${CAMEIA_PERFIL_URL}` | A |
 | `/api/v1/users/**` | `${CAMEIA_CUENTAS_URL}` | A |
+| `/api/v1/auth/**` | `${CAMEIA_CUENTAS_URL}` | A |
 | `/api/v1/interviews/**` | `${CAMEIA_ENTREVISTA_URL}` | A |
 | `/api/v1/voice-service/**` | `${CAMEIA_VOZ_URL}` | A |
 | `/api/v1/audit/**` | `${CAMEIA_AUDITORIA_URL}` | A |
@@ -149,6 +151,7 @@ Las reglas comunes (ASVS nivel 1, OWASP API Security Top 10, secretos y registro
 - **CORS.** La lista `allowedHeaders` no incluye ningún `X-User-*`: los emite el Gateway, no el navegador. Admitirlos invitaría al cliente a mandar justo lo que solo el Gateway debe firmar.
 - **Actuator.** Solo `health` e `info` son públicos (`MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE`).
 - **Emulador de Firebase Auth.** Es solo para desarrollo local (ver sección 3).
+- **Permiso de Firebase.** La cuenta de servicio del Gateway necesita `roles/firebaseauth.viewer` para comprobar la revocación; sin él no arranca.
 - El archivo de clave de la service account es un recurso solo de desarrollo local. En Cloud Run las credenciales por defecto salen del servidor de metadatos con la identidad de la service account del Gateway: no hay JSON que montar ni `GOOGLE_APPLICATION_CREDENTIALS` que definir. Las mismas credenciales sirven para el Admin SDK y para firmar los tokens OIDC.
 
 **Lo que bloquea un PR en este repositorio:**
@@ -219,7 +222,7 @@ Rama, commit, tipos, título de PR, revisión y merge: rige [CONTRIBUTING.md](CO
 
 - El título del PR lleva `[IA-ASISTIDO]` al final cuando hubo IA; el commit no lo lleva. Un commit asistido por IA lleva el trailer `Co-Authored-By` con el modelo.
 - Una IA puede abrir un PR; nunca lo fusiona. El control humano lo marca la persona que revisa.
-- Un PR cubre una pieza reconocible y no pasa de 1000 líneas entre agregadas y eliminadas.
+- Un PR por tarea de Jira (CM), sin tope de líneas: una rama, un PR hacia `develop` y un commit por capacidad (migración, dominio, API, pruebas, Postman y documentación) en orden de lectura, cada uno compila. Se parte en dos solo si la tarea trae dos piezas que se despliegan por separado o depende de otra sin fusionar.
 - Antes del código hay una spec aprobada en `specs/CM-NNN-Descripcion/` (`spec.md`, `plan.md` y `tasks.md`); el flujo está en la sección 12 de [docs/estandar-backend.md](docs/estandar-backend.md).
 - Las decisiones con peso humano se registran en [docs/bitacora-ia/](docs/bitacora-ia/README.md).
 

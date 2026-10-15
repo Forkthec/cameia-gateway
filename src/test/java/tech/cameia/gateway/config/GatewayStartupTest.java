@@ -114,6 +114,17 @@ class GatewayStartupTest {
         }
     }
 
+    /**
+     * Con {@code gateway.firebase.enabled=false} (el perfil de pruebas) la comprobación del permiso de lectura no existe:
+     * ninguna prueba de contexto debe hacer una llamada real a Firebase.
+     */
+    @Test
+    void firebaseDisabled_permissionCheckBeanIsAbsent() {
+        try (ConfigurableApplicationContext context = startWithMockFirebase()) {
+            assertThat(context.getBeansOfType(FirebaseRevocationPermissionCheck.class)).isEmpty();
+        }
+    }
+
     /** Fuente de tokens falsa: la real exige credenciales de Google (REQ-NF-OIDC-03). */
     @TestConfiguration
     static class FakeOidcSourceConfig {
