@@ -51,7 +51,7 @@ tech.cameia.gateway
 
 | Archivo | Qué decide |
 |---|---|
-| `application.yml` | **A dónde** va cada petición (6 rutas), CORS, timeout y qué expone Actuator |
+| `application.yml` | **A dónde** va cada petición (7 rutas), CORS, timeout y qué expone Actuator |
 | `application-local.yml` | Lo que cambia en el perfil `local`: hoy, solo el log de coincidencia de rutas |
 | `FirebaseAuthGlobalFilter.java` | **Si hace falta** haber iniciado sesión, qué identidad recibe el microservicio y el `X-Request-Id` |
 | `GlobalErrorHandler.java` | Qué estado y qué cuerpo recibe el cliente cuando algo falla |
@@ -80,8 +80,9 @@ flowchart TD
     D -->|No, es privada| F{"¿Bearer con token<br/>no vacío?"}
 
     F -->|No| G["401 AUTH_REQUIRED<br/>no llega al microservicio"]
-    F -->|Sí| V["verifyIdToken<br/>con Firebase Admin SDK"]
-    V -->|Firebase lo rechaza| G
+    F -->|Sí| V["verifyIdToken con revocación<br/>con Firebase Admin SDK"]
+    V -->|"Firebase rechaza el token<br/>(inválido, vencido, revocado,<br/>cuenta deshabilitada o eliminada)"| G
+    V -->|Firebase no puede confirmarlo| W["503 AUTH_UNAVAILABLE<br/>no llega al microservicio"]
     V -->|Token válido| H["Borra X-User-* del cliente y Authorization<br/>Emite X-User-Id, Email, Roles, Plan"]
 
     E --> I["cameia-perfil"]
@@ -91,6 +92,7 @@ flowchart TD
 
     style C fill:#ffe0e0
     style G fill:#ffe0e0
+    style W fill:#ffe0e0
     style T fill:#ffe0e0
     style U fill:#ffe0e0
     style E fill:#fff4d6
@@ -108,7 +110,7 @@ sequenceDiagram
     participant P as cameia-perfil
 
     W->>G: GET /api/v1/profiles/me<br/>Authorization: Bearer (Firebase)
-    G->>F: verifyIdToken()
+    G->>F: verifyIdToken() con revocación
     F-->>G: uid + claims
     Note over G: Borra X-User-* del cliente y Authorization<br/>Emite la identidad del token
     G->>P: GET /api/v1/profiles/me<br/>X-User-Id, X-User-Email, X-User-Roles,<br/>X-User-Plan, X-User-Email-Verified, X-Request-Id<br/>(sin ninguna credencial)
@@ -295,7 +297,7 @@ que no se conocen entre sí**.
 ```mermaid
 flowchart TB
     subgraph Y["application.yml · YAML"]
-        Y1["¿A DÓNDE va la petición?<br/>6 rutas con predicados de Path"]
+        Y1["¿A DÓNDE va la petición?<br/>7 rutas con predicados de Path"]
     end
     subgraph J["FirebaseAuthGlobalFilter.java"]
         J1["¿HACE FALTA sesión?<br/>constantes PUBLIC_ROUTES<br/>y DEV_PUBLIC_ROUTES"]
@@ -318,11 +320,12 @@ Cada ruta son tres cosas: un `id`, un destino (`uri`, siempre una variable de en
     - Path=/api/v1/profiles/**     # qué URLs entran aquí
 ```
 
-Las 6 rutas declaradas hoy:
+Las 7 rutas declaradas hoy:
 
 | URL que llega | Va a | Predicados |
 |---|---|---|
 | `/api/v1/users/**` | cameia-cuentas | `Path` |
+| `/api/v1/auth/**` | cameia-cuentas | `Path` |
 | `/api/v1/profiles/**` | cameia-perfil | `Path` |
 | `/api/v1/interviews/**` | cameia-entrevista | `Path` |
 | `/webhooks/wompi` | cameia-cuentas | `Path` + `Method=POST` |
@@ -429,7 +432,8 @@ El catálogo de errores (spec `CM-104-correcciones` §2.4):
 
 | Situación | Estado | `code` | Quién lo escribe |
 |---|---|---|---|
-| Token ausente, vacío, malformado o rechazado | `401` | `AUTH_REQUIRED` | el filtro |
+| Token ausente, vacío, malformado o rechazado, sesión cerrada en todos los dispositivos, cuenta deshabilitada o cuenta eliminada | `401` | `AUTH_REQUIRED` | el filtro |
+| Firebase no puede confirmar el token (caído, lento, sin cuota o sin permiso de lectura) | `503` | `AUTH_UNAVAILABLE` | el filtro |
 | Ninguna ruta coincide con la URL | `404` | `NOT_FOUND` | `GlobalErrorHandler` |
 | Respuesta ininteligible del destino | `502` | `BAD_GATEWAY` | `GlobalErrorHandler` |
 | Destino inalcanzable | `503` | `SERVICE_UNAVAILABLE` | `GlobalErrorHandler` |
