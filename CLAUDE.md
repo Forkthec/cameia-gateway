@@ -222,7 +222,7 @@ Rama, commit, tipos, título de PR, revisión y merge: rige [CONTRIBUTING.md](CO
 
 - El título del PR lleva `[IA-ASISTIDO]` al final cuando hubo IA; el commit no lo lleva. Un commit asistido por IA lleva el trailer `Co-Authored-By` con el modelo.
 - Una IA puede abrir un PR; nunca lo fusiona. El control humano lo marca la persona que revisa.
-- Un PR cubre una pieza reconocible y no pasa de 1000 líneas entre agregadas y eliminadas.
+- Un PR por tarea de Jira (CM), sin tope de líneas: una rama, un PR hacia `develop` y un commit por capacidad (migración, dominio, API, pruebas, Postman y documentación) en orden de lectura, cada uno compila. Se parte en dos solo si la tarea trae dos piezas que se despliegan por separado o depende de otra sin fusionar.
 - Antes del código hay una spec aprobada en `specs/CM-NNN-Descripcion/` (`spec.md`, `plan.md` y `tasks.md`); el flujo está en la sección 12 de [docs/estandar-backend.md](docs/estandar-backend.md).
 - Las decisiones con peso humano se registran en [docs/bitacora-ia/](docs/bitacora-ia/README.md).
 
