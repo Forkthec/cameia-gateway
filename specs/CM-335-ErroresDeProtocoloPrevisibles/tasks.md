@@ -78,3 +78,14 @@ Crear `src/test/java/tech/cameia/gateway/server/NettyDecodingRejectionsTest.java
 3. Lista de verificación de la spec (V-01 a V-05).
 4. `ejecucion/evidencia/CM-335/resumen.md` con lo hecho, cobertura, hallazgos y commits.
 5. Sin push ni PR: se pregunta a Paula.
+
+---
+
+## Resultado de la ejecución
+
+| Tarjeta | Resultado |
+|---|---|
+| T0 | Rama sobre `develop` `ee5f78b`. Línea base: `clean verify`, 160 pruebas, 0 fallos, 0 omitidas, `BUILD SUCCESS`. La opción A está decidida. |
+| T1 | `RawHttpClient` y `NettyDecodingRejectionsTest`: 14 pruebas (las 7 de la tarjeta más los límites medidos de encabezado y de línea de petición, el espacio en la ruta y dos longitudes de cuerpo contradictorias). Los estados coinciden con los de la spec; no hay código de producción, así que la prueba fija el comportamiento existente y no tiene un «antes» que falle. Límites medidos: línea de petición de 4096 bytes (ruta de 4083 admitida, 4084 da 414) y encabezado `X-Foo` de hasta 8153 bytes de valor con `Host` y `Connection` (8154 da 431). |
+| T2 | `docs/errores.md` con la tabla de rechazos sin código, ADR 0003 y entrada 03 de la bitácora. |
+| T3 | `clean verify` sobre la punta: 174 pruebas, 0 fallos, 0 omitidas. Cobertura de JaCoCo idéntica a la línea base (no hay código nuevo). Ensayo con bytes crudos contra el jar empaquetado sin ningún 5xx propio y 50 rechazos en paralelo sin efecto sobre la salud. |
