@@ -1,6 +1,6 @@
 # Plan · CM-335 Rechazos de protocolo del Gateway
 
-Spec: `spec.md` (misma carpeta). Rama `CM-335-errores-de-protocolo-previsibles` desde `origin/develop`. Un PR; sin dependencias. **BLOQUEADO por la decisión D-1 de Paula** para cualquier código de producción; la opción A (recomendada) no escribe código de producción.
+Spec: `spec.md` (misma carpeta). Rama `CM-335-errores-de-protocolo-previsibles` desde `origin/develop`. Un PR; sin dependencias. La decisión D-1 está tomada (opción A, Paula, 17-oct): no se escribe código de producción.
 
 ## 1. Enfoque (opción A)
 

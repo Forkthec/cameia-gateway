@@ -5,7 +5,7 @@
 | Tarea Jira | CM-335 (tarea, Sprint 3), responsable Paula Andrea Muñoz Delgado |
 | Repositorio | `cameia-gateway`, base `origin/develop` = `ee5f78b` (se vuelve a anotar el SHA al preparar la rama) |
 | Depende de | Nada sin fusionar |
-| Estado | **BORRADOR. Pendiente de aprobación de Paula y de su decisión D-1 (limitación documentada u opción B)** |
+| Estado | **Aprobada por Paula el 19-oct-2026 (opción A, limitación documentada) e implementada** |
 | Estimación | Opción A (recomendada): 1 a 1,5 h. Opción B: 4 a 5 h más. Se informa a Vela |
 | Servicios hermanos | `cameia-perfil` y `cameia-cuentas` tienen su propia spec de la misma tarea; cada una se entiende sola |
 
@@ -28,6 +28,8 @@ Registros en `ejecucion/evidencia/CM-335/` de la carpeta raíz de trabajo: `65`,
 | E-7 | `?lang=%zz` con o sin token | 400, cuerpo vacío (E-4) | El Gateway lo bloquea antes que el servicio |
 | E-8 | `TRACE`, `OPTIONS` sin `Origin` | 401 `AUTH_REQUIRED` con el formato del Gateway | `FirebaseAuthGlobalFilter` (sin problema) |
 | E-9 | Cuerpo JSON de 20 MB con token | Llega a Perfil, que responde 422 | No hay límite de tamaño en el Gateway (fuera de alcance, §14) |
+
+Límites medidos con el jar empaquetado y bytes crudos (los 9000 bytes de E-2 y E-3 solo son un ejemplo que los supera): la línea de petición admite 4096 bytes (una ruta de 4083 con `GET /` pasa; 4084 da 414) y el **total** de los encabezados admite 8192 bytes, con `Host` y `Connection` (un `X-Foo` de 8153 bytes pasa; 8154 da 431). El límite es del total, no de cada encabezado ni de su número: 300 encabezados de 14 bytes pasan y 700 dan 431. Las filas E-6 y E-9 y lo demás que el Gateway reenvía sin interpretar (tamaño del cuerpo, `Accept`, `multipart`) quedan descritos en `docs/errores.md`, en «Respuestas que difieren del estándar».
 
 El Gateway ya borra los `X-User-*` que envía el cliente y usa el `uid` del token (`X-User-Id` con BEL o TAB enviado por el cliente no llega a los servicios).
 
@@ -79,7 +81,7 @@ El Gateway no tiene base de datos.
 
 | Control | Qué hace | Prueba |
 |---|---|---|
-| API8 / ASVS 14.1 | Documenta que el Gateway no refleja el contenido rechazado: los cuerpos están vacíos | `NettyDecodingRejectionsTest` |
+| API8 | Documenta que el Gateway no refleja el contenido rechazado: los cuerpos están vacíos (el ID «ASVS 14.1» que antes se citaba no existe en la matriz de ASVS 5.0.0 de `cameia-infra`) | `NettyDecodingRejectionsTest` |
 | API4 | Los límites de encabezado y de URL de Netty se mantienen | `…oversizedHeader…`, `…oversizedUrl…` |
 | Defecto en servicios | E-6 y E-5 se corrigen o documentan en Perfil y Cuentas; aquí solo se anota | specs hermanas |
 
@@ -111,13 +113,13 @@ El límite de tamaño del cuerpo (E-9, OWASP API4; necesita tarea propia, junto 
 
 | # | Decisión | Por qué | Descartado | Quién |
 |---|---|---|---|---|
-| D-1 | **PENDIENTE de Paula:** A (limitación documentada) o B (manejador de Netty que responde JSON) o C (B más validar la URI antes) | Recomendación: **A** | — | Paula |
+| D-1 | **A (limitación documentada, con pruebas de sockets que la vigilan; sin código de producción)** | Recomendación aceptada | B (manejador de Netty que responde JSON) y C (B más validar la URI antes) | Paula, 17-oct |
 | D-2 | La recomendación es A porque (1) ningún navegador ni la interfaz de CAMEIA produce estas peticiones: las envía un script; (2) el estado HTTP ya es el correcto y el cliente decide por él; (3) B depende de nombres internos de Reactor Netty y toca el único punto de entrada de todo el tráfico, con riesgo en cada actualización; (4) lo alcanzable por un usuario real (formularios mal codificados) se corrige en Perfil y Cuentas | Costo y riesgo frente a beneficio | B y C | Backend |
 | D-3 | La prueba con sockets vigila el comportamiento aunque no se cambie | Evita que la documentación mienta tras una actualización | Solo documentar | Backend |
 
 ## 16. Preguntas
 
-**PENDIENTE de Paula:** D-1. Si elige B o C, se agregan tarjetas y los nombres, textos y estados de REQ-B2 se confirman con ella antes de escribir código. Nada de Perfil ni de Cuentas depende de esta decisión.
+**Respondida el 17-oct:** D-1 = opción A (limitación documentada). Medido con sockets contra el código de `develop`: 400 (carácter de control), 431 (encabezado de 9000 bytes), 414 (URL de 9000 bytes), 400 (`%zz` en consulta) y 400 (`%zz` en ruta), todos con `Content-Length: 0`; el encabezado de 7000 bytes llega a la ruta (401). Si Paula reabre B o C, se agregan tarjetas y los nombres, textos y estados de REQ-B2 se confirman con ella antes de escribir código. Nada de Perfil ni de Cuentas depende de esta decisión.
 
 ## 17. Lista de verificación (opción A)
 

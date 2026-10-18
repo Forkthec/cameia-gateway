@@ -1,6 +1,6 @@
 # Tarjetas · CM-335 Rechazos de protocolo del Gateway (opción A)
 
-**Reglas para todas las tarjetas:** identificadores y nombres de prueba en inglés con la forma del repo `escenario_condicion_resultado`; Javadoc en todo lo nuevo; sin `CM-335` en comentarios ni rutas a otros archivos; sin dependencias nuevas; sin tocar código de producción, `application.yml` ni `.github/`. Si algo no coincide, detenerse y reportar a Paula con la salida real. Estado de la spec: **BORRADOR y BLOQUEADA por la decisión D-1 de Paula: no se implementa nada hasta que la apruebe.**
+**Reglas para todas las tarjetas:** identificadores y nombres de prueba en inglés con la forma del repo `escenario_condicion_resultado`; Javadoc en todo lo nuevo; sin `CM-335` en comentarios ni rutas a otros archivos; sin dependencias nuevas; sin tocar código de producción, `application.yml` ni `.github/`. Si algo no coincide, detenerse y reportar a Paula con la salida real. Estado de la spec: **BORRADOR; D-1 decidida (opción A). No se implementa nada hasta que Paula apruebe la spec.**
 
 ---
 
