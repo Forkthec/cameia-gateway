@@ -61,6 +61,8 @@ public class GlobalErrorHandler implements WebExceptionHandler {
     private static final Map<HttpStatus, ErrorBody> CATALOG = Map.of(
             HttpStatus.UNAUTHORIZED, new ErrorBody("AUTH_REQUIRED", "Token de acceso requerido o inválido"),
             HttpStatus.NOT_FOUND, new ErrorBody("NOT_FOUND", "Recurso no encontrado"),
+            HttpStatus.METHOD_NOT_ALLOWED, new ErrorBody("METHOD_NOT_ALLOWED", "Método no permitido"),
+            HttpStatus.NOT_ACCEPTABLE, new ErrorBody("NOT_ACCEPTABLE", "Formato de respuesta no disponible"),
             HttpStatus.BAD_GATEWAY, new ErrorBody("BAD_GATEWAY", "Respuesta inválida del servicio destino"),
             HttpStatus.SERVICE_UNAVAILABLE, new ErrorBody("SERVICE_UNAVAILABLE", "Servicio destino no disponible"),
             HttpStatus.GATEWAY_TIMEOUT, new ErrorBody("GATEWAY_TIMEOUT", "El servicio destino no respondió a tiempo")

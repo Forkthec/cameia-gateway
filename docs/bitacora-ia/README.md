@@ -8,3 +8,4 @@ Cada entrada es un archivo `NN_tema_prompt.md`, con `NN` consecutivo.
 |---|---|---|
 | [01_alinear-estandar-backend_prompt.md](01_alinear-estandar-backend_prompt.md) | Alinear los documentos y el estándar de los cuatro repositorios de Backend | [Spec de CM-283](../../specs/CM-283-AlinearEstandar/spec.md) |
 | [02_sesiones-revocadas-en-el-gateway_prompt.md](02_sesiones-revocadas-en-el-gateway_prompt.md) | Verificación de sesiones revocadas: permiso comprobado al arrancar, 503 con código propio y 401 sin causa visible | [Spec de CM-291](../../specs/CM-291-CerrarSesionEnTodosLosDispositivos/spec.md), P-1 a P-3 |
+| [03_rechazos-de-protocolo-del-gateway_prompt.md](03_rechazos-de-protocolo-del-gateway_prompt.md) | Rechazos de protocolo del Gateway: limitación documentada con pruebas de sockets que la vigilan, sin código de producción | [Spec de CM-335](../../specs/CM-335-ErroresDeProtocoloPrevisibles/spec.md), D-1 |
