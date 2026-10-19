@@ -121,6 +121,25 @@ class GatewayErrorMappingTest {
      * necesita token.
      */
     @Test
+    void unsupportedMethodOnActuator_returns405WithOwnCode() {
+        webTestClient.post().uri("/actuator/health")
+                .exchange()
+                .expectStatus().isEqualTo(405)
+                .expectBody().jsonPath("$.code").isEqualTo("METHOD_NOT_ALLOWED")
+                .jsonPath("$.message").isEqualTo("Método no permitido");
+    }
+
+    @Test
+    void unavailableMediaTypeOnActuator_returns406WithOwnCode() {
+        webTestClient.get().uri("/actuator/health")
+                .header("Accept", "application/xml")
+                .exchange()
+                .expectStatus().isEqualTo(406)
+                .expectBody().jsonPath("$.code").isEqualTo("NOT_ACCEPTABLE")
+                .jsonPath("$.message").isEqualTo("Formato de respuesta no disponible");
+    }
+
+    @Test
     void unreachableDownstream_returns503() {
         webTestClient.post()
                 .uri("/webhooks/wompi")
