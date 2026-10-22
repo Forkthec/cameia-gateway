@@ -35,7 +35,7 @@
       necesita io.grpc.netty.NettyChannelBuilder del grpc-netty no-shaded para GrpcSslConfigurer.
       La versión debe alinearse con la que Firebase Admin trae transitivamente.
     -->
-    <grpc-netty.version>1.84.0</grpc-netty.version>
+    <grpc-netty.version>1.85.0</grpc-netty.version>
   </properties>
 
   <dependencyManagement>
