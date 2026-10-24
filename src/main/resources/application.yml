@@ -88,6 +88,7 @@ spring:
                   - Authorization
                   - Content-Type
                   - X-Request-Id      # el cliente puede aportarlo (REQ-09)
+                  - Idempotency-Key   # clave de repetición que elige el cliente; no es una identidad
                 # Sin X-User-*: solo el Gateway las emite (REQ-NF-01)
                 allowCredentials: true
                 maxAge: 3600
