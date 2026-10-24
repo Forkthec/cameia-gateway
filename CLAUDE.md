@@ -148,7 +148,7 @@ El Gateway no tiene base de datos ni persistencia: no usa Spring Data ni JPA, y 
 
 Las reglas comunes (ASVS nivel 1, OWASP API Security Top 10, secretos y registros) están en la [sección 8 del estándar](docs/estandar-backend.md#8-seguridad). Las propias del Gateway:
 
-- **CORS.** La lista `allowedHeaders` no incluye ningún `X-User-*`: los emite el Gateway, no el navegador. Admitirlos invitaría al cliente a mandar justo lo que solo el Gateway debe firmar.
+- **CORS.** La lista `allowedHeaders` no incluye ningún `X-User-*`: los emite el Gateway, no el navegador. Admitirlos invitaría al cliente a mandar justo lo que solo el Gateway debe firmar. Sí admite `Idempotency-Key`: es una clave de repetición que elige el cliente, no una identidad, y la web la envía al crear la sesión y al registrar respuestas.
 - **Actuator.** Solo `health` e `info` son públicos (`MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE`).
 - **Emulador de Firebase Auth.** Es solo para desarrollo local (ver sección 3).
 - **Permiso de Firebase.** La cuenta de servicio del Gateway necesita `roles/firebaseauth.viewer` para comprobar la revocación; sin él no arranca.

@@ -419,14 +419,16 @@ abierto como `GW-TBD-11`.
 
 | Control | Valor | Dónde |
 |---|---|---|
-| CORS | Un solo origen (`GATEWAY_CORS_ALLOWED_ORIGIN`), con credenciales, cacheado 1 h. Cabeceras admitidas: `Authorization`, `Content-Type`, `X-Request-Id` | `globalcors` en el YAML |
+| CORS | Un solo origen (`GATEWAY_CORS_ALLOWED_ORIGIN`), con credenciales, cacheado 1 h. Cabeceras admitidas: `Authorization`, `Content-Type`, `X-Request-Id`, `Idempotency-Key` | `globalcors` en el YAML |
 | Timeout al microservicio | 30 s (`GATEWAY_TIMEOUT_MS`); al agotarse, `504` | `httpclient.response-timeout` |
 | `X-Request-Id` | Se conserva el del cliente o se genera uno. Llega al microservicio y vuelve al cliente con un único valor | `FirebaseAuthGlobalFilter` |
 | Formato de error | `{"code":"...","message":"..."}` desde un catálogo cerrado | `GlobalErrorHandler` |
 | Nivel del log del error | `5xx`: `ERROR` con traza. `404`: `INFO` sin traza. Otros `4xx`: `WARN` sin traza | `GlobalErrorHandler` (CM-184) |
 
 CORS ya no admite ninguna cabecera `X-User-*`. Comprobado con el gateway corriendo: un preflight que pide
-`X-User-Id` recibe `403`; uno que pide `X-Request-Id` recibe `200`.
+`X-User-Id` recibe `403`; uno que pide `X-Request-Id` o `Idempotency-Key` recibe `200`. Lo vigila `GlobalCorsConfigTest`.
+Con varios encabezados en un mismo preflight, el Gateway responde `200` aunque alguno no esté admitido y lo deja
+fuera de `Access-Control-Allow-Headers`: es el navegador quien bloquea. Por eso la prueba compara la lista devuelta.
 
 El catálogo de errores (spec `CM-104-correcciones` §2.4):
 
