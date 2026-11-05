@@ -1,0 +1,605 @@
+package tech.cameia.gateway.filter;
+
+import com.google.firebase.auth.AuthErrorCode;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseAuthException;
+import com.google.firebase.auth.FirebaseToken;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.cloud.gateway.filter.GatewayFilterChain;
+import org.springframework.cloud.gateway.filter.GlobalFilter;
+import org.springframework.core.Ordered;
+import org.springframework.core.env.Environment;
+import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.server.reactive.ServerHttpRequest;
+import org.springframework.stereotype.Component;
+import org.springframework.web.server.ServerWebExchange;
+
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
+
+import java.nio.charset.StandardCharsets;
+import java.util.Collection;
+import java.util.EnumSet;
+import java.util.Set;
+import java.util.UUID;
+
+import static java.util.stream.Collectors.joining;
+
+/**
+ * Filtro global de autenticación del Gateway: la única pieza que decide quién es el usuario
+ * y la única fuente de las cabeceras de identidad que reciben los microservicios.
+ *
+ * <p>Atiende dos casos, descritos en {@code AGENTS.md} §6:
+ * <ul>
+ *   <li><b>Caso A — ruta protegida.</b> Verifica el ID Token de Firebase de la cabecera
+ *       {@code Authorization}. Si es válido, borra toda cabecera {@code X-User-*} que haya enviado
+ *       el cliente, escribe las del token y retira el {@code Authorization} original. Si falta o es
+ *       inválido, responde {@code 401 AUTH_REQUIRED} sin reenviar nada.</li>
+ *   <li><b>Caso B — ruta pública</b> ({@code PUBLIC_ROUTES}, y {@code DEV_PUBLIC_ROUTES} con el
+ *       perfil {@code local}), por método y ruta exactos. No verifica token, pero igualmente borra
+ *       toda cabecera {@code X-User-*} y el {@code Authorization} del cliente: no hay usuario
+ *       autenticado y el microservicio no debe creer que lo hay.</li>
+ * </ul>
+ *
+ * <p>El token se verifica con comprobación de revocación: una sesión cerrada en todos los dispositivos, una cuenta
+ * deshabilitada o una cuenta eliminada responden {@code 401}. Si Firebase no puede confirmar el token (no responde, agotó el
+ * tiempo, la cuota o los permisos), responde {@code 503 AUTH_UNAVAILABLE} y la sesión de la persona se conserva.
+ *
+ * <p>Rechaza con {@code 403 EMAIL_NOT_VERIFIED} un token cuyo claim {@code email_verified} es
+ * {@code false}, salvo en {@code POST /api/v1/users/me/verification}; la ausencia del claim no bloquea.
+ *
+ * <p>En los dos casos garantiza un {@code X-Request-Id} en la solicitud reenviada y en la respuesta
+ * al cliente, con el mismo valor.
+ *
+ * <p>Las cabeceras se fijan siempre con {@code set} y nunca con {@code header(...)}: este último
+ * <em>añade</em> un segundo valor cuando el cliente ya envió la misma cabecera, y deja indefinido
+ * cuál lee el microservicio. Es la regla que impide suplantar a otro usuario (REQ-07).
+ *
+ * <p>Este filtro no aplica reglas de negocio ni interpreta los claims: los propaga tal como vienen
+ * en el token (REQ-08).
+ *
+ * <p>Requisitos: {@code specs/CM-104-correcciones/spec.md} y {@code specs/CM-14-Registro-usuario/spec.md}.
+ */
+@Component
+public class FirebaseAuthGlobalFilter implements GlobalFilter, Ordered {
+
+    private static final Logger log = LoggerFactory.getLogger(FirebaseAuthGlobalFilter.class);
+
+    /** Identificador del usuario: el {@code uid} del token de Firebase. Siempre presente en Caso A. */
+    static final String X_USER_ID = "X-User-Id";
+
+    /** Correo del usuario, del claim {@code email}. Se omite si el token no lo trae (GW-TBD-07). */
+    static final String X_USER_EMAIL = "X-User-Email";
+
+    /** Roles del usuario, del claim {@code roles}, separados por comas. Se omite si el claim falta. */
+    static final String X_USER_ROLES = "X-User-Roles";
+
+    /** Plan del usuario, del custom claim {@code plan}. Se omite si el claim falta; nunca llega vacío. */
+    static final String X_USER_PLAN = "X-User-Plan";
+
+    /**
+     * Estado de verificación del correo, del claim {@code email_verified}. Un {@code false} sí se
+     * propaga: es un dato, no una ausencia. Solo se omite si el claim no existe (CM-14 REQ-VER-03).
+     */
+    static final String X_USER_EMAIL_VERIFIED = "X-User-Email-Verified";
+
+    /**
+     * Identificador de trazabilidad de la solicitud. Se conserva el del cliente o se genera uno.
+     * Es trazabilidad, no identidad: por eso no pertenece a {@code IDENTITY_HEADERS}.
+     */
+    static final String X_REQUEST_ID = "X-Request-Id";
+
+    /** Nombre del custom claim de Firebase con el plan del usuario. Lo escribe cameia-cuentas. */
+    static final String PLAN_CLAIM = "plan";
+
+    /** Nombre del custom claim de Firebase con los roles del usuario. */
+    static final String ROLES_CLAIM = "roles";
+
+    /** Nombre del claim estándar de Firebase con el estado de verificación del correo. */
+    static final String EMAIL_VERIFIED_CLAIM = "email_verified";
+
+    /** Única ruta que una cuenta con el correo sin verificar puede usar: es la forma de salir de ese estado. */
+    static final String VERIFICATION_PATH = "/api/v1/users/me/verification";
+
+    /** Código del rechazo por correo sin verificar; lo reserva el contrato del proyecto. */
+    static final String EMAIL_NOT_VERIFIED_CODE = "EMAIL_NOT_VERIFIED";
+
+    /** Código del 503 cuando Firebase no pudo confirmar el token; la sesión de la persona se conserva. */
+    static final String AUTH_UNAVAILABLE_CODE = "AUTH_UNAVAILABLE";
+
+    /** Causa registrada cuando falta el token, viene vacío o no usa el esquema Bearer. */
+    static final String CAUSE_TOKEN_MISSING = "TOKEN_MISSING";
+
+    /** Causa registrada cuando Firebase rechaza el formato del token con {@code IllegalArgumentException}. */
+    static final String CAUSE_TOKEN_MALFORMED = "TOKEN_MALFORMED";
+
+    /**
+     * Rechazos que son culpa del token o de la cuenta: la persona debe iniciar sesión de nuevo. Cualquier otro fallo de Firebase
+     * significa que no se pudo confirmar el token, y responder 401 cerraría la sesión de todo el mundo durante una caída.
+     */
+    private static final Set<AuthErrorCode> TOKEN_REJECTIONS = EnumSet.of(
+            AuthErrorCode.INVALID_ID_TOKEN, AuthErrorCode.EXPIRED_ID_TOKEN, AuthErrorCode.REVOKED_ID_TOKEN,
+            AuthErrorCode.USER_DISABLED, AuthErrorCode.USER_NOT_FOUND, AuthErrorCode.TENANT_ID_MISMATCH);
+
+    /** Esquema de la cabecera {@code Authorization} que lleva el ID Token de Firebase, con su espacio. */
+    private static final String BEARER_PREFIX = "Bearer ";
+
+    /**
+     * Tipo de contenido de las respuestas JSON que escribe este filtro. {@code MediaType.APPLICATION_JSON}
+     * no declara {@code charset}; el estándar de seguridad exige declararlo en toda respuesta con cuerpo.
+     */
+    private static final MediaType APPLICATION_JSON_UTF8 =
+            new MediaType("application", "json", StandardCharsets.UTF_8);
+
+    /**
+     * Cabeceras que solo el Gateway emite. Cualquier valor que llegue del cliente con uno de estos
+     * nombres se descarta antes de reenviar, tanto en rutas protegidas como públicas (REQ-07, REQ-10).
+     */
+    private static final Set<String> IDENTITY_HEADERS = Set.of(
+            X_USER_ID, X_USER_EMAIL, X_USER_ROLES, X_USER_PLAN, X_USER_EMAIL_VERIFIED
+    );
+
+    /** Perfil de desarrollo: el único que abre {@code DEV_PUBLIC_ROUTES} (CM-14 REQ-REG-01). */
+    static final String DEV_PROFILE = "local";
+
+    /** Perfil de despliegue: nunca puede convivir con {@code DEV_PROFILE} (CM-14 plan §3.3). */
+    static final String DEPLOY_PROFILE = "prod";
+
+    /**
+     * Variable que Cloud Run inyecta en todo contenedor de servicio. Si existe, el Gateway está
+     * desplegado y la lista de desarrollo no puede estar activa (CM-14 REQ-REG-02).
+     */
+    static final String CLOUD_RUN_SERVICE_VARIABLE = "K_SERVICE";
+
+    /**
+     * Entrada pública: método HTTP y ruta exactos. Al ser {@code record}, {@code equals} compara
+     * por valor, así que {@code Set.contains} sigue siendo una comparación exacta sin comodines
+     * (CM-14 REQ-REG-03, REQ-REG-06).
+     *
+     * @param method método HTTP que debe tener la solicitud
+     * @param path   ruta exacta, sin query string
+     */
+    private record PublicRoute(HttpMethod method, String path) { }
+
+    /**
+     * Rutas del Gateway que no exigen token de Firebase (Caso B) en cualquier perfil. Se comparan
+     * por método y ruta: otro método sobre la misma ruta es Caso A (CM-14 REQ-REG-06).
+     *
+     * <p>Vive en código y no en YAML a propósito: cualquier propiedad enlazada se puede sobrescribir
+     * con una variable de entorno, y abrir una ruta debe exigir recompilar (CM-14 REQ-REG-02).
+     *
+     * <p>Aquí no van {@code /actuator/health} ni {@code /actuator/info}, y no es un olvido (REQ-13).
+     * Actuator se atiende con su propio {@code HandlerMapping} (orden {@code -100}), antes que las
+     * rutas del Gateway (orden {@code 1}), así que este filtro nunca ve esas solicitudes: son
+     * públicas por arquitectura, no por esta lista. Una entrada aquí aparentaría controlar algo que
+     * no controla. La prueba {@code actuatorHealth_withoutToken_returns200} lo demuestra.
+     */
+    private static final Set<PublicRoute> PUBLIC_ROUTES = Set.of(
+            new PublicRoute(HttpMethod.POST, "/webhooks/wompi"),
+            new PublicRoute(HttpMethod.POST, "/api/v1/users")   // registro de usuario (CM-14 REQ-REG-05)
+    );
+
+    /**
+     * Health v1 de cada microservicio, públicos solo con el perfil de desarrollo (CM-14 REQ-REG-01).
+     * Una versión nueva de un health no se abre sola: se añade aquí y se recompila.
+     */
+    private static final Set<PublicRoute> DEV_PUBLIC_ROUTES = Set.of(
+            new PublicRoute(HttpMethod.GET, "/api/v1/users/health"),
+            new PublicRoute(HttpMethod.GET, "/api/v1/profiles/health"),
+            new PublicRoute(HttpMethod.GET, "/api/v1/interviews/health"),
+            new PublicRoute(HttpMethod.GET, "/api/v1/voice-service/health"),
+            new PublicRoute(HttpMethod.GET, "/api/v1/audit/health")
+    );
+
+    private final FirebaseAuth firebaseAuth;
+
+    /** Se calcula una sola vez: los perfiles activos no cambian después del arranque. */
+    private final boolean devRoutesEnabled;
+
+    /**
+     * @param firebaseAuth cliente del Admin SDK de Firebase con el que se verifican los ID Tokens
+     * @param environment  entorno de Spring, del que se leen los perfiles activos y {@code K_SERVICE}
+     * @throws IllegalStateException si el perfil de desarrollo está activo dentro de Cloud Run o
+     *                               junto al perfil de despliegue
+     */
+    public FirebaseAuthGlobalFilter(FirebaseAuth firebaseAuth, Environment environment) {
+        this.firebaseAuth = firebaseAuth;
+        this.devRoutesEnabled = environment.matchesProfiles(DEV_PROFILE);
+        if (devRoutesEnabled && isDeployment(environment)) {
+            // CM-14 REQ-REG-02: se falla el arranque en vez de abrir los health en despliegue
+            throw new IllegalStateException("El perfil '" + DEV_PROFILE + "' abre rutas públicas de "
+                    + "desarrollo y no puede estar activo en Cloud Run (" + CLOUD_RUN_SERVICE_VARIABLE
+                    + " definida) ni junto al perfil '" + DEPLOY_PROFILE + "'");
+        }
+    }
+
+    /**
+     * @param environment entorno de Spring
+     * @return {@code true} si existe {@code K_SERVICE} o está activo el perfil {@code prod}
+     */
+    private static boolean isDeployment(Environment environment) {
+        return environment.getProperty(CLOUD_RUN_SERVICE_VARIABLE) != null
+                || environment.matchesProfiles(DEPLOY_PROFILE);
+    }
+
+    /**
+     * Máxima precedencia: la identidad debe quedar resuelta y saneada antes de que corra cualquier
+     * otro filtro o se reenvíe la solicitud.
+     *
+     * @return {@link Ordered#HIGHEST_PRECEDENCE}
+     */
+    @Override
+    public int getOrder() {
+        return Ordered.HIGHEST_PRECEDENCE;
+    }
+
+    /**
+     * Decide entre Caso A y Caso B, y reenvía la solicitud saneada o responde {@code 401}.
+     *
+     * <p>La verificación del token es bloqueante, así que se ejecuta en
+     * {@link Schedulers#boundedElastic()} para no ocupar el hilo de evento reactivo.
+     *
+     * @param exchange intercambio HTTP de la solicitud entrante
+     * @param chain    resto de la cadena de filtros del Gateway
+     * @return la continuación de la cadena con la solicitud saneada, o la escritura de un {@code 401}
+     */
+    @Override
+    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+        // REQ-09: se resuelve antes de bifurcar, para que exista en rutas públicas y protegidas
+        String requestId = resolveRequestId(exchange);
+        exposeRequestId(exchange, requestId);
+
+        if (isPublicRoute(exchange.getRequest())) {
+            return chain.filter(withoutIdentity(exchange, requestId));
+        }
+
+        String idToken = extractIdToken(exchange);
+        if (idToken == null) {
+            // REQ-02: se rechaza antes de llamar a Firebase, que con un token vacío lanzaría otra excepción
+            return writeUnauthorized(exchange, "Token de acceso requerido", requestId, CAUSE_TOKEN_MISSING);
+        }
+
+        // El rechazo se captura antes del flatMap: así solo cubre la verificación del token, y un
+        // fallo al reenviar al microservicio nunca se confunde con un token inválido (plan §3.4)
+        return Mono.fromCallable(() -> firebaseAuth.verifyIdToken(idToken, true)) // true: comprueba revocación y cuenta
+                .subscribeOn(Schedulers.boundedElastic())
+                // tras escribir el 401 se completa vacío: el flatMap no corre y nada se reenvía
+                .onErrorResume(this::isTokenRejection,
+                        e -> writeUnauthorized(exchange, "Token de acceso inválido", requestId, rejectionCause(e))
+                                .then(Mono.<FirebaseToken>empty()))
+                // cualquier otro fallo de Firebase: no se pudo confirmar el token, y la sesión se conserva
+                .onErrorResume(FirebaseAuthException.class::isInstance,
+                        e -> writeAuthUnavailable(exchange, requestId, (FirebaseAuthException) e)
+                                .then(Mono.<FirebaseToken>empty()))
+                .flatMap(decodedToken -> shouldReject(exchange.getRequest(), decodedToken)
+                        ? writeEmailNotVerified(exchange, requestId)
+                        : chain.filter(withIdentity(exchange, decodedToken, requestId)));
+    }
+
+    /**
+     * El token ya lo aceptó Firebase: decide si su correo permite usar esta ruta. Solo bloquea un
+     * claim {@code email_verified} igual a {@code false}; la ausencia del claim no bloquea.
+     *
+     * @param request solicitud entrante
+     * @param token   ID Token de Firebase ya verificado
+     * @return {@code true} si debe responderse {@code 403 EMAIL_NOT_VERIFIED}
+     */
+    private boolean shouldReject(ServerHttpRequest request, FirebaseToken token) {
+        return "false".equalsIgnoreCase(readEmailVerified(token)) && !isVerificationRoute(request);
+    }
+
+    /**
+     * Método y ruta exactos, sin normalizar: ninguna variante (otro método, barra final,
+     * mayúsculas) queda exceptuada.
+     *
+     * @param request solicitud entrante
+     * @return {@code true} solo para {@code POST /api/v1/users/me/verification}
+     */
+    private boolean isVerificationRoute(ServerHttpRequest request) {
+        return HttpMethod.POST.equals(request.getMethod()) && VERIFICATION_PATH.equals(request.getPath().value());
+    }
+
+    /**
+     * Decide si un fallo de la verificación es culpa del token o de la cuenta y merece {@code 401} (REQ-02).
+     *
+     * <p>Solo cuentan el formato inválido ({@link IllegalArgumentException}) y los rechazos de Firebase listados en
+     * {@code TOKEN_REJECTIONS}. Cualquier otro {@link FirebaseAuthException} (sin red, sin permiso, sin claves públicas) significa
+     * que Firebase no pudo confirmar el token y se responde {@code 503}; un fallo que no es de Firebase sigue llegando al
+     * manejador global.
+     *
+     * @param error excepción lanzada al verificar el ID Token
+     * @return {@code true} si el token o la cuenta deben volver a iniciar sesión
+     */
+    private boolean isTokenRejection(Throwable error) {
+        return error instanceof IllegalArgumentException
+                || (error instanceof FirebaseAuthException firebaseError
+                        && TOKEN_REJECTIONS.contains(firebaseError.getAuthErrorCode()));
+    }
+
+    /**
+     * Nombra la causa de un rechazo para el log, sin el token.
+     *
+     * @param error excepción que {@link #isTokenRejection(Throwable)} aceptó
+     * @return {@code TOKEN_MALFORMED} para un formato inválido; el nombre del código de autenticación en los demás casos
+     */
+    private String rejectionCause(Throwable error) {
+        if (error instanceof FirebaseAuthException firebaseError) {
+            return firebaseError.getAuthErrorCode().name();
+        }
+        return CAUSE_TOKEN_MALFORMED;
+    }
+
+    /**
+     * Decide si la solicitud es Caso B comparando método y ruta exactos (CM-14 REQ-REG-06).
+     *
+     * <p>La lista de desarrollo solo se consulta con el perfil {@code local} activo: sin él, esos
+     * health son Caso A como cualquier otra ruta (CM-14 REQ-REG-02).
+     *
+     * @param request solicitud entrante
+     * @return {@code true} si la solicitud coincide con una entrada pública y no exige token
+     */
+    private boolean isPublicRoute(ServerHttpRequest request) {
+        PublicRoute route = new PublicRoute(request.getMethod(), request.getPath().value());
+        return PUBLIC_ROUTES.contains(route) || (devRoutesEnabled && DEV_PUBLIC_ROUTES.contains(route));
+    }
+
+    /**
+     * Obtiene el identificador de trazabilidad de la solicitud (REQ-09).
+     *
+     * @param exchange intercambio HTTP de la solicitud entrante
+     * @return el {@code X-Request-Id} del cliente, o un UUID nuevo si falta o está en blanco
+     */
+    private String resolveRequestId(ServerWebExchange exchange) {
+        String incoming = exchange.getRequest().getHeaders().getFirst(X_REQUEST_ID);
+        if (incoming == null || incoming.isBlank()) {
+            return UUID.randomUUID().toString();
+        }
+        return incoming;
+    }
+
+    /**
+     * Devuelve el {@code X-Request-Id} en la respuesta al cliente, con un único valor (REQ-09).
+     *
+     * <p>Se fija dos veces, y las dos hacen falta:
+     * <ol>
+     *   <li>De inmediato, para que {@code GlobalErrorHandler} lo encuentre y registre el error con
+     *       el mismo id que recibió el microservicio.</li>
+     *   <li>Justo antes de enviar la respuesta, porque el Gateway <em>añade</em> las cabeceras que
+     *       devuelve el microservicio: si este trae su propio {@code X-Request-Id}, el cliente
+     *       recibiría dos valores.</li>
+     * </ol>
+     *
+     * @param exchange  intercambio HTTP de la solicitud entrante
+     * @param requestId identificador de trazabilidad ya resuelto
+     */
+    private void exposeRequestId(ServerWebExchange exchange, String requestId) {
+        HttpHeaders responseHeaders = exchange.getResponse().getHeaders();
+        responseHeaders.set(X_REQUEST_ID, requestId);
+        exchange.getResponse().beforeCommit(() -> {
+            responseHeaders.set(X_REQUEST_ID, requestId); // set reemplaza el valor del microservicio
+            return Mono.empty();
+        });
+    }
+
+    /**
+     * Extrae el ID Token de la cabecera {@code Authorization} sin verificarlo (REQ-02).
+     *
+     * <p>El token se recorta con {@code trim()}: {@code Bearer } seguido solo de espacios es un token
+     * vacío y no debe llegar a Firebase.
+     *
+     * @param exchange intercambio HTTP de la solicitud entrante
+     * @return el token sin el prefijo {@code Bearer }, o {@code null} si falta la cabecera, el esquema
+     *         no es {@code Bearer} o el token queda vacío
+     */
+    private String extractIdToken(ServerWebExchange exchange) {
+        String authHeader = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
+        if (authHeader == null || !authHeader.startsWith(BEARER_PREFIX)) {
+            return null;
+        }
+        String idToken = authHeader.substring(BEARER_PREFIX.length()).trim();
+        return idToken.isEmpty() ? null : idToken;
+    }
+
+    /**
+     * Caso B: prepara la solicitud de una ruta pública. No hay usuario autenticado, así que no debe
+     * quedar rastro de identidad (REQ-03, REQ-10).
+     *
+     * <p>También retira el {@code Authorization} entrante (CM-14 REQ-REG-07): un ID Token que el
+     * navegador envíe por inercia no debe llegar al microservicio (AGENTS.md §7, bloqueante 4).
+     * {@code /webhooks/wompi} no lo necesita: se autentica con la firma del cuerpo.
+     *
+     * @param exchange  intercambio HTTP de la solicitud entrante
+     * @param requestId identificador de trazabilidad ya resuelto
+     * @return un intercambio sin cabeceras {@code X-User-*} ni {@code Authorization}, y con un único
+     *         {@code X-Request-Id}
+     */
+    private ServerWebExchange withoutIdentity(ServerWebExchange exchange, String requestId) {
+        ServerHttpRequest request = exchange.getRequest().mutate()
+                .headers(h -> {
+                    IDENTITY_HEADERS.forEach(h::remove);
+                    h.remove(HttpHeaders.AUTHORIZATION);  // CM-14 REQ-REG-07
+                    h.set(X_REQUEST_ID, requestId); // set y no header: header añadiría un segundo valor
+                })
+                .build();
+        return exchange.mutate().request(request).build();
+    }
+
+    /**
+     * Caso A: prepara la solicitud de una ruta protegida con la identidad del token ya verificado.
+     *
+     * <p>El orden importa: primero borra lo que mandó el cliente y después escribe lo verificado.
+     * Las cabeceras opcionales se omiten si su valor falta, en lugar de enviarse vacías (REQ-01).
+     *
+     * @param exchange  intercambio HTTP de la solicitud entrante
+     * @param token     ID Token de Firebase ya verificado
+     * @param requestId identificador de trazabilidad ya resuelto
+     * @return un intercambio con las cabeceras de identidad del token, un único valor por cabecera
+     *         y sin el {@code Authorization} del cliente
+     */
+    private ServerWebExchange withIdentity(ServerWebExchange exchange, FirebaseToken token, String requestId) {
+        ServerHttpRequest request = exchange.getRequest().mutate()
+                .headers(h -> {
+                    IDENTITY_HEADERS.forEach(h::remove);  // REQ-07: borra lo que mandó el cliente
+                    h.remove(HttpHeaders.AUTHORIZATION);  // REQ-07: no propagar el token original
+                    h.set(X_USER_ID, token.getUid());     // set y no header: header añadiría un segundo valor
+                    setIfPresent(h, X_USER_EMAIL, token.getEmail());
+                    setIfPresent(h, X_USER_ROLES, readRoles(token));
+                    setIfPresent(h, X_USER_PLAN, readPlan(token));
+                    setIfPresent(h, X_USER_EMAIL_VERIFIED, readEmailVerified(token));
+                    h.set(X_REQUEST_ID, requestId);
+                })
+                .build();
+        return exchange.mutate().request(request).build();
+    }
+
+    /**
+     * Lee el custom claim {@code plan} sin interpretarlo (REQ-08).
+     *
+     * @param token ID Token de Firebase ya verificado
+     * @return el valor del claim como texto, o {@code null} si el claim no existe
+     */
+    private String readPlan(FirebaseToken token) {
+        Object claim = token.getClaims().get(PLAN_CLAIM);
+        return claim == null ? null : claim.toString();
+    }
+
+    /**
+     * Lee el claim {@code email_verified} sin interpretarlo (CM-14 REQ-VER-01 a REQ-VER-03).
+     *
+     * <p>Se lee del mapa de claims y no de {@code FirebaseToken.isEmailVerified()}: ese método
+     * devuelve {@code false} cuando el claim no existe, y convertiría una ausencia en una
+     * afirmación. Para cameia-cuentas no es lo mismo, aunque en los dos casos responda {@code 403}.
+     *
+     * @param token ID Token de Firebase ya verificado
+     * @return el valor del claim como texto, o {@code null} si el claim no existe
+     */
+    private String readEmailVerified(FirebaseToken token) {
+        Object claim = token.getClaims().get(EMAIL_VERIFIED_CLAIM);
+        return claim == null ? null : claim.toString(); // "false" también se propaga
+    }
+
+    /**
+     * Lee el claim {@code roles}, que puede llegar como lista o como cadena mientras
+     * GW-TBD-06 siga abierto.
+     *
+     * <p>No cambia mayúsculas, no ordena, no deduplica y no deduce los roles a partir de
+     * {@code plan} (REQ-08, GW-TBD-09).
+     *
+     * @param token ID Token de Firebase ya verificado
+     * @return los roles unidos por comas si el claim es una lista, el valor tal cual si es una
+     *         cadena, o {@code null} si el claim no existe
+     */
+    private String readRoles(FirebaseToken token) {
+        Object claim = token.getClaims().get(ROLES_CLAIM);
+        if (claim == null) {
+            return null; // se omite la cabecera
+        }
+        if (claim instanceof Collection<?> values) {
+            return values.stream().map(String::valueOf).collect(joining(","));
+        }
+        return String.valueOf(claim); // cadena única, tal cual
+    }
+
+    /**
+     * Fija una cabecera solo si tiene valor, para que ninguna cabecera se propague vacía (REQ-01).
+     *
+     * @param headers cabeceras de la solicitud que se va a reenviar
+     * @param name    nombre de la cabecera
+     * @param value   valor a fijar; si es {@code null} o está en blanco, la cabecera no se escribe
+     */
+    private void setIfPresent(HttpHeaders headers, String name, String value) {
+        if (value != null && !value.isBlank()) {
+            headers.set(name, value);
+        }
+    }
+
+    /**
+     * Responde {@code 401} con código {@code AUTH_REQUIRED} y termina el procesamiento: la solicitud
+     * no llega al microservicio (REQ-02).
+     *
+     * <p>El cuerpo se declara como {@code application/json} con charset UTF-8.
+     *
+     * <p>Registra el rechazo en nivel {@code WARN} con su {@code X-Request-Id} y su causa (REQ-09). Nunca
+     * registra el token ni la cabecera {@code Authorization}. La cabecera {@code X-Request-Id} de la
+     * respuesta ya la fijó {@code filter(...)}.
+     *
+     * @param exchange  intercambio HTTP de la solicitud entrante
+     * @param message   mensaje en español para el cuerpo de la respuesta; debe ser un texto fijo,
+     *                  nunca el mensaje de una excepción
+     * @param requestId identificador de trazabilidad que se incluye en el log
+     * @param cause     causa del rechazo que se incluye en el log; solo el nombre de un código, nunca datos del token
+     * @return la escritura de la respuesta {@code 401}
+     */
+    private Mono<Void> writeUnauthorized(ServerWebExchange exchange, String message, String requestId, String cause) {
+        // REQ-09: el rechazo queda trazado. Nunca se registra el token ni la cabecera Authorization
+        log.warn("Solicitud rechazada por autenticación [requestId={}] [causa={}]", requestId, cause);
+        return writeError(exchange, HttpStatus.UNAUTHORIZED, "AUTH_REQUIRED", message);
+    }
+
+    /**
+     * Responde {@code 503 AUTH_UNAVAILABLE} y termina el procesamiento: Firebase no pudo confirmar el token, así que no se
+     * sabe si es válido y no se reenvía nada. No es un 401 a propósito: la sesión de la persona sigue vigente.
+     *
+     * <p>Registra el fallo en nivel {@code ERROR} con la traza, el código del error de Firebase y el {@code X-Request-Id}; nunca
+     * el token.
+     *
+     * @param exchange  intercambio HTTP de la solicitud entrante
+     * @param requestId identificador de trazabilidad que se incluye en el log
+     * @param error     fallo de Firebase al confirmar el token
+     * @return la escritura de la respuesta {@code 503}
+     */
+    private Mono<Void> writeAuthUnavailable(ServerWebExchange exchange, String requestId, FirebaseAuthException error) {
+        log.error("No se pudo verificar el token con Firebase [code={}, requestId={}, errorCode={}]",
+                AUTH_UNAVAILABLE_CODE, requestId, error.getErrorCode(), error);
+        return writeError(exchange, HttpStatus.SERVICE_UNAVAILABLE, AUTH_UNAVAILABLE_CODE,
+                "Servicio de autenticación no disponible");
+    }
+
+    /**
+     * Responde {@code 403 EMAIL_NOT_VERIFIED} y termina el procesamiento: la solicitud no llega al
+     * microservicio ni se firma con OIDC. Registra el rechazo con su {@code X-Request-Id}; nunca el
+     * token, el correo ni el {@code uid}.
+     *
+     * @param exchange  intercambio HTTP de la solicitud entrante
+     * @param requestId identificador de trazabilidad que se incluye en el log
+     * @return la escritura de la respuesta {@code 403}
+     */
+    private Mono<Void> writeEmailNotVerified(ServerWebExchange exchange, String requestId) {
+        // El rechazo queda trazado con su identificador; nunca el token, el correo ni el uid
+        log.warn("Solicitud rechazada por correo sin verificar [code={}, requestId={}]",
+                EMAIL_NOT_VERIFIED_CODE, requestId);
+        return writeError(exchange, HttpStatus.FORBIDDEN, EMAIL_NOT_VERIFIED_CODE,
+                "Tu correo aún no está verificado.");
+    }
+
+    /**
+     * Escribe el cuerpo {@code {"code":...,"message":...}} con el estado indicado y
+     * {@code application/json} con charset UTF-8.
+     *
+     * <p>{@code code} y {@code message} son siempre textos fijos del Gateway, nunca datos de la
+     * petición ni el mensaje de una excepción.
+     *
+     * @param exchange intercambio HTTP de la solicitud entrante
+     * @param status   estado HTTP de la respuesta
+     * @param code     código estable del error
+     * @param message  mensaje en español para la persona
+     * @return la escritura de la respuesta
+     */
+    private Mono<Void> writeError(ServerWebExchange exchange, HttpStatus status, String code, String message) {
+        String body = """
+                {"code":"%s","message":"%s"}""".formatted(code, message);
+        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+
+        exchange.getResponse().setStatusCode(status);
+        exchange.getResponse().getHeaders().setContentType(APPLICATION_JSON_UTF8);
+
+        DataBuffer buffer = exchange.getResponse().bufferFactory().wrap(bytes);
+        return exchange.getResponse().writeWith(Mono.just(buffer));
+    }
+}

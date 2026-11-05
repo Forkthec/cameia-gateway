@@ -1,0 +1,201 @@
+name: Build, publicar imagen y desplegar a Cloud Run
+
+# Workflow reutilizable que construye la imagen desde el código y la despliega. Lo
+# llama despliegue-continuo.yml solo para staging (CM-156) — producción no reconstruye,
+# promueve por digest la misma imagen que este workflow ya publicó (ver ese job).
+# Queda parametrizado por ambiente/servicio por si en el futuro hace falta otro caso
+# que sí necesite construir desde cero (ej. un ambiente de prueba nuevo).
+on:
+  workflow_call:
+    inputs:
+      ambiente:
+        description: Environment de GitHub a usar (staging | production)
+        required: true
+        type: string
+      servicio:
+        description: Nombre del Cloud Run Service a desplegar
+        required: true
+        type: string
+      min_instances:
+        required: false
+        type: number
+        default: 0
+      sha:
+        description: >-
+          SHA del commit a construir y desplegar. Obligatorio cuando quien invoca este
+          workflow se disparó por workflow_run: en ese caso GITHUB_SHA de este workflow
+          reutilizable apunta a la punta de la rama en el momento del evento, no al
+          commit que realmente disparó el evento.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  REGION: us-east1
+  AR_REPO: cameia
+  # Nombre de la imagen en Artifact Registry: fijo, no cambia con el ambiente. El
+  # nombre del Cloud Run Service sí cambia (inputs.servicio).
+  IMAGEN_NOMBRE: cameia-gateway
+  # Red y subred de staging: las mismas en las que corren Perfil, Cuentas y Entrevista.
+  VPC_NETWORK: cameia-staging
+  VPC_SUBNET: cameia-staging-us-east1
+
+jobs:
+  desplegar:
+    name: Desplegar (${{ inputs.ambiente }})
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.ambiente }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha }}
+
+      # Cuenta de servicio compartida entre gateway/perfil/cuentas, con permisos
+      # mínimos y binding WIF condicionado a este repo (CM-156).
+      - name: Autenticar en GCP (WIF)
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Configurar gcloud
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Autenticar Docker contra Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      # Tag corto (7 caracteres) calculado a partir del commit recibido como input, no
+      # de GITHUB_SHA -- este workflow puede invocarse desde un evento donde GITHUB_SHA
+      # no corresponde al commit que se quiere construir.
+      - name: Calcular tag de imagen
+        id: imagen
+        run: |
+          SHA_CORTO=$(echo "${{ inputs.sha }}" | cut -c1-7)
+          IMAGEN="${{ env.REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ env.AR_REPO }}/${{ env.IMAGEN_NOMBRE }}:${SHA_CORTO}"
+          echo "imagen=${IMAGEN}" >> "$GITHUB_OUTPUT"
+
+      - name: Build de la imagen
+        run: docker build -t "${{ steps.imagen.outputs.imagen }}" .
+
+      - name: Publicar imagen en Artifact Registry
+        run: docker push "${{ steps.imagen.outputs.imagen }}"
+
+      # CAMEIA_PERFIL_URL, CAMEIA_CUENTAS_URL y CAMEIA_ENTREVISTA_URL apuntan a las URLs
+      # reales de Cloud Run de esos tres servicios, verificadas contra los servicios
+      # desplegados -- un hostname de docker-compose no es alcanzable fuera de una red
+      # local.
+      # FIREBASE_PROJECT_ID es obligatorio: FirebaseConfig.java falla el arranque sin
+      # él (fail-fast, REQ-06) — mismo proyecto que VITE_FIREBASE_PROJECT_ID en
+      # cameia-web.
+      #
+      # --service-account usa una identidad de ejecución propia y exclusiva de este
+      # servicio (no la identidad por defecto que comparten otros servicios del
+      # proyecto): es esa identidad, y solo ella, la que tiene permiso de invocación
+      # sobre los tres destinos anteriores. Reutilizar una identidad compartida aquí
+      # anularía esa separación, porque cualquier otra cosa que corra con la misma
+      # identidad heredaría el mismo acceso sin necesitarlo.
+      # Nota: tener el permiso de invocación no basta por sí solo para que la llamada
+      # funcione en la práctica -- además hace falta que salga por la red privada (ver
+      # --network más abajo); sin eso el destino la rechaza aunque el permiso exista.
+      #
+      # Sin --allow-unauthenticated a propósito: el SA de despliegue no tiene (ni
+      # necesita) permiso para tocar la política IAM del servicio — el acceso público
+      # se otorga una sola vez, fuera de este pipeline.
+      # --ingress=internal-and-cloud-load-balancing: el servicio deja de aceptar
+      # tráfico directo desde internet -- solo se puede llegar a través del Load
+      # Balancer global que ya tiene Cloud Armor delante, o desde dentro de la misma
+      # red privada. La política de invocación (IAM) es una capa aparte y no cambia
+      # con esto: quien ya podía invocar el servicio antes de este cambio lo sigue
+      # pudiendo hacer, solo que ahora únicamente por ese camino de red permitido.
+      #
+      # --network, --subnet y --vpc-egress=all-traffic: los tres destinos solo aceptan
+      # tráfico interno (ingreso interno). Cloud Run exige que una llamada entre servicios
+      # salga por la red privada; si no, la rechaza con un 404 que no llega al contenedor
+      # de destino ni queda en sus logs, y este servicio lo devuelve tal cual al cliente.
+      # Sin red propia el Gateway no podía reenviar nada a Perfil, Cuentas ni Entrevista,
+      # con o sin permiso de invocación. Van los mismos valores que usan los destinos. La
+      # subred tiene acceso privado a las APIs de Google y Cloud NAT, así que la salida a
+      # internet (por ejemplo, las claves con las que se verifican los tokens de Firebase)
+      # sigue funcionando.
+      #
+      # GATEWAY_CORS_ALLOWED_ORIGIN lleva los orígenes reales del frontend, separados por
+      # coma en un solo valor (application.yml los reparte). Va en este archivo versionado,
+      # no como default: agregar un origen nuevo debe pasar por PR.
+      # --set-env-vars usa el delimitador ^;^ porque ese valor con comas rompería el
+      # separador por defecto entre variables.
+      #
+      # SPRING_PROFILES_ACTIVE=prod (CM-175, hallazgo real del 18-sep-2026): sin esta
+      # variable, application.yml deja spring.profiles.active vacío (linea 7, a proposito
+      # — CM-14 REQ-REG-02) y application-prod.yml (el "perfil de despliegue" de AGENTS.md
+      # §6.3) nunca se carga. Sin ese perfil, gateway.oidc.signing-enabled cae en su
+      # default de application.yml (${GATEWAY_OIDC_ENABLED:false}, tambien sin definir
+      # aqui) y la firma OIDC saliente queda apagada. Verificado en vivo antes de este fix:
+      # `gcloud run services describe cameia-gateway` no listaba SPRING_PROFILES_ACTIVE ni
+      # GATEWAY_OIDC_ENABLED, y cameia-perfil exige `roles/run.invoker` (revisado con
+      # `gcloud run services get-iam-policy cameia-perfil`) — toda llamada real Gateway→
+      # Perfil habria fallado por falta de token OIDC, aunque el codigo de la firma (CM-104-
+      # correcciones-OIDC) ya existiera. El nombre "prod" es el del perfil de Spring, no del
+      # ambiente de GCP: aplica igual en staging, que aqui es "produccion" en el sentido de
+      # "no es un desarrollador local" (AGENTS.md §6.3, "Perfil de despliegue").
+      - name: Desplegar a Cloud Run
+        run: |
+          gcloud run deploy "${{ inputs.servicio }}" \
+            --image="${{ steps.imagen.outputs.imagen }}" \
+            --project="${{ vars.GCP_PROJECT_ID }}" \
+            --region="${{ env.REGION }}" \
+            --platform=managed \
+            --min-instances=${{ inputs.min_instances }} \
+            --max-instances=2 \
+            --ingress=internal-and-cloud-load-balancing \
+            --service-account="cameia-gateway-run@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com" \
+            --network="${{ env.VPC_NETWORK }}" \
+            --subnet="${{ env.VPC_SUBNET }}" \
+            --vpc-egress=all-traffic \
+            --set-env-vars="^;^SPRING_PROFILES_ACTIVE=prod;CAMEIA_PERFIL_URL=https://cameia-perfil-og25p6yagq-ue.a.run.app;CAMEIA_CUENTAS_URL=https://cameia-cuentas-og25p6yagq-ue.a.run.app;CAMEIA_ENTREVISTA_URL=https://cameia-entrevista-og25p6yagq-ue.a.run.app;FIREBASE_PROJECT_ID=${{ vars.GCP_PROJECT_ID }};GATEWAY_CORS_ALLOWED_ORIGIN=https://cameia.app,https://cameia-e245f.web.app,https://cameia-e245f.firebaseapp.com,https://cameia-e245f--staging-gwyx3iui.web.app"
+
+      - name: URL del servicio desplegado
+        id: url
+        run: |
+          URL=$(gcloud run services describe "${{ inputs.servicio }}" --project="${{ vars.GCP_PROJECT_ID }}" --region="${{ env.REGION }}" --format="value(status.url)")
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+          echo "$URL"
+
+      # Smoke test (Anexo_Restricciones_Atributos_Calidad.pdf DPL-02: la promocion de un
+      # digest exige "SHA, digest, aprobacion, smoke test y rollback" como evidencia
+      # minima — no bastaba con que `gcloud run deploy` retorne sin error, porque eso solo
+      # confirma que el contenedor arranco, no que responde bien a una peticion real (asi
+      # paso con el hallazgo de SPRING_PROFILES_ACTIVE de arriba: el contenedor arrancaba
+      # normal con la firma OIDC apagada).
+      #
+      # Por que via el dominio publico y no la URL cruda de Cloud Run: el servicio usa
+      # --ingress=internal-and-cloud-load-balancing (linea de arriba), que rechaza tanto la
+      # llamada directa desde este runner de GitHub Actions como el tunel autenticado de
+      # `gcloud run services proxy` (probado en vivo el 18-sep-2026 contra staging: ambos
+      # dan 404/403 de la infraestructura de Google, sin llegar nunca al contenedor). El
+      # dominio publico (Load Balancer + Cloud Armor, DPL-05) SI es un camino de red
+      # permitido por ese mismo ingress, y /actuator/health no pasa por las rutas del
+      # Gateway (AGENTS.md §5: "Publico, no se enruta") asi que no necesita token de
+      # Firebase. Solo se ejecuta para staging: producción todavía no tiene dominio propio
+      # (ver ESTADO.md, "corregir el job de producción del Gateway") y desplegar-servicio.yml
+      # hoy solo se invoca para staging.
+      - name: Smoke test — /actuator/health a través del dominio público (solo staging)
+        if: inputs.ambiente == 'staging'
+        run: |
+          for intento in 1 2 3 4 5; do
+            CODIGO=$(curl -s -o /tmp/health.json -w "%{http_code}" "${{ vars.STAGING_API_URL }}/actuator/health" || echo "000")
+            if [ "$CODIGO" = "200" ]; then
+              echo "Smoke test PASA: /actuator/health respondió 200 en el intento $intento."
+              cat /tmp/health.json
+              exit 0
+            fi
+            echo "Intento $intento: /actuator/health respondió $CODIGO, reintentando en 5s (la revision nueva puede tardar en recibir tráfico)."
+            sleep 5
+          done
+          echo "::error::Smoke test FALLA: /actuator/health no respondió 200 tras el despliegue (última respuesta: $CODIGO)."
+          cat /tmp/health.json
+          exit 1

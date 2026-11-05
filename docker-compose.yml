@@ -1,0 +1,148 @@
+# Entorno de desarrollo local de cameia-gateway.
+#
+# Objetivo: que quien clone el repositorio solo necesite Docker. Ni Java, ni Maven instalados.
+#
+#   docker compose up --build -d       -> gateway corriendo en http://localhost:8080
+#   docker compose run --rm verify     -> compila y ejecuta toda la suite de pruebas
+#   docker compose down                -> detiene los contenedores
+#
+# Prerequisito: la red compartida debe existir antes de hacer 'up':
+#   docker network create cameia-net
+#
+# Ver docs/DOCKER-LOCAL.md para instrucciones completas de arranque junto a cameia-perfil.
+
+name: cameia-gateway
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # El gateway. Punto de entrada HTTP de toda la plataforma.
+  # Puerto 8080 en la máquina anfitriona.
+  # ---------------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cameia-gateway:local
+    container_name: cameia-gateway-app
+    environment:
+      SPRING_APPLICATION_NAME: cameia-gateway
+      SPRING_PROFILES_ACTIVE: local
+      SERVER_PORT: 8080
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID}
+      # La clave se monta como volumen de solo lectura; nunca se copia a la imagen ni al repo.
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/firebase-key
+      # Emulador de Firebase Auth. Sin valor a propósito: Compose la pasa al contenedor solo si está
+      # definida en el entorno o en .env, y si no lo está, el contenedor no la recibe. Con ella el
+      # gateway arranca sin llave de service account y acepta tokens sin firma, por eso el gateway
+      # se niega a arrancar si la ve en un despliegue. Ejemplo: cameia-firebase-emulator:9099
+      FIREBASE_AUTH_EMULATOR_HOST:
+      # Nombre de contenedor de perfil dentro de cameia-net — no configurable por entorno.
+      CAMEIA_PERFIL_URL: http://cameia-perfil-app:8082
+      # Dentro de cameia-net se usa el nombre de contenedor y el puerto INTERNO del
+      # contenedor, no el publicado en el host (entrevista publica 8083, pero escucha en 8080).
+      # Requiere que cuentas y entrevista declaren cameia-net como red externa en su compose.
+      CAMEIA_CUENTAS_URL: ${CAMEIA_CUENTAS_URL:-http://cameia-cuentas:8081}
+      CAMEIA_ENTREVISTA_URL: ${CAMEIA_ENTREVISTA_URL:-http://cameia-entrevista:8080}
+      GATEWAY_CORS_ALLOWED_ORIGIN: ${GATEWAY_CORS_ALLOWED_ORIGIN:-http://localhost:5173}
+      GATEWAY_TIMEOUT_MS: ${GATEWAY_TIMEOUT_MS:-30000}
+      # Firma OIDC saliente: apagada en local, los microservicios en Docker no tienen IAM (AGENTS.md §6.3)
+      GATEWAY_OIDC_ENABLED: ${GATEWAY_OIDC_ENABLED:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info
+    volumes:
+      # FIREBASE_KEY_PATH debe apuntar al JSON de service account descargado de Firebase Console.
+      # Ejemplo: FIREBASE_KEY_PATH=/Users/tu-usuario/secretos/cameia-firebase.json
+      # El fallback /dev/null evita error de interpolación cuando solo se ejecuta 'verify'.
+      - ${FIREBASE_KEY_PATH:-/dev/null}:/run/secrets/firebase-key:ro
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - cameia-gateway-net
+      - cameia-net
+
+  # ---------------------------------------------------------------------------
+  # Emulador de Firebase Auth. Sustituye a un proyecto real de Firebase en local:
+  # no necesita llave de service account y sus usuarios solo existen en esta máquina.
+  #
+  # Es UNA instancia compartida: los servicios de cameia-net lo alcanzan por nombre
+  # (http://cameia-firebase-emulator:9099) y el navegador en http://localhost:9099.
+  #
+  # - El puerto se publica solo en 127.0.0.1: el emulador no tiene autenticación y no debe
+  #   quedar expuesto a otros equipos de la red.
+  # - Su ID de proyecto tiene variable propia y NO se toma de FIREBASE_PROJECT_ID, para que
+  #   nunca arranque con el ID de un proyecto real. Debe empezar por "demo-".
+  # - Guarda los usuarios en el volumen firebase-emulator-data al apagarse de forma ordenada
+  #   (docker compose stop/down) y los recupera al arrancar. 'docker compose down -v' los borra.
+  # - Emite tokens sin firma: sirve únicamente para desarrollo local.
+  # ---------------------------------------------------------------------------
+  firebase-emulator:
+    build:
+      context: ./docker/firebase-emulator
+    image: cameia-firebase-emulator:local
+    container_name: cameia-firebase-emulator
+    environment:
+      FIREBASE_EMULATOR_PROJECT_ID: ${FIREBASE_EMULATOR_PROJECT_ID:-demo-cameia}
+    ports:
+      - "127.0.0.1:${FIREBASE_EMULATOR_PORT:-9099}:9099"
+    volumes:
+      - firebase-emulator-data:/data
+    healthcheck:
+      # Formato lista y no cadena: en una sola cadena, las comillas rompen el sh del contenedor.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9099/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    # Margen para que firebase-tools termine de exportar el estado antes de que Docker
+    # lo mate; con el valor por defecto (10 s) una exportación lenta se cortaría.
+    stop_grace_period: 30s
+    networks:
+      - cameia-net
+
+  # ---------------------------------------------------------------------------
+  # Compilación y pruebas. No se levanta con 'up': se invoca a demanda.
+  #
+  #   docker compose run --rm verify
+  #
+  # Corre 'mvn verify' dentro de un contenedor Maven. Los tests usan mocks de
+  # Firebase y MockWebServer; no necesitan la red ni el servicio app corriendo.
+  # ---------------------------------------------------------------------------
+  verify:
+    # REQ-NF-03: detrás de un perfil, 'docker compose up' ya no lo arranca.
+    # 'docker compose run --rm verify' sigue funcionando: run activa el perfil del servicio que nombra.
+    profiles: ["tools"]
+    image: maven:3.9-eclipse-temurin-21
+    working_dir: /app
+    command: mvn verify -B --no-transfer-progress
+    volumes:
+      - .:/app
+      - maven-cache:/root/.m2
+    environment:
+      SPRING_PROFILES_ACTIVE: test
+      FIREBASE_PROJECT_ID: test-project
+      GOOGLE_APPLICATION_CREDENTIALS: /app/src/test/resources/firebase-noop.json
+      CAMEIA_CUENTAS_URL: http://localhost:9001
+      CAMEIA_PERFIL_URL: http://localhost:9002
+      CAMEIA_ENTREVISTA_URL: http://localhost:9003
+      SERVER_PORT: "0"
+    networks:
+      - cameia-gateway-net
+
+volumes:
+  maven-cache:
+  firebase-emulator-data:
+
+networks:
+  cameia-gateway-net:
+    driver: bridge
+  # Red compartida con los demás microservicios. Debe crearse antes de hacer 'up':
+  #   docker network create cameia-net
+  cameia-net:
+    external: true

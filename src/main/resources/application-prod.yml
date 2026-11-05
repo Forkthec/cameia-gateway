@@ -1,0 +1,11 @@
+# Perfil de despliegue (Cloud Run). Lo que aquí se fija NO se puede apagar por variable de entorno.
+# URLs, CORS y timeout siguen llegando por variable de entorno: cambian entre proyectos de GCP.
+#
+# Este archivo está versionado: NUNCA poner aquí secretos, credenciales ni URLs reales.
+gateway:
+  oidc:
+    signing-enabled: true    # REQ-OIDC-07 — literal a propósito, nunca ${...}
+
+logging:
+  level:
+    org.springframework.cloud.gateway: WARN

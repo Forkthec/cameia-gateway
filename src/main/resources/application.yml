@@ -1,0 +1,128 @@
+spring:
+  application:
+    name: ${SPRING_APPLICATION_NAME:cameia-gateway}
+  # Sin perfil por defecto (CM-14 REQ-REG-02, GW-TBD-19): 'local' abre rutas públicas de desarrollo
+  # y nunca debe activarse solo. Quien lo necesita lo declara (docker-compose.yml, .env).
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:}
+
+  # SimpleDiscoveryClientAutoConfiguration referencia ServerProperties que se movió en SB 4.1.1.
+  # El gateway usa URLs directas (env vars), no service discovery ni load balancing.
+  autoconfigure:
+    exclude:
+      - org.springframework.cloud.client.discovery.simple.SimpleDiscoveryClientAutoConfiguration
+      - org.springframework.cloud.client.discovery.composite.CompositeDiscoveryClientAutoConfiguration
+      - org.springframework.cloud.loadbalancer.config.LoadBalancerAutoConfiguration
+      - org.springframework.cloud.loadbalancer.config.BlockingLoadBalancerClientAutoConfiguration
+
+  cloud:
+    discovery:
+      enabled: false
+    loadbalancer:
+      enabled: false
+
+    gateway:
+      server:
+        webflux:
+          # ── Rutas ─────────────────────────────────────────────────────────
+          routes:
+            # Sprint 1 — activas
+            - id: cameia-cuentas-users
+              uri: ${CAMEIA_CUENTAS_URL}
+              predicates:
+                - Path=/api/v1/users/**
+
+            # Cierre de sesión en todos los dispositivos (Cuentas). Caso A: no entra en PUBLIC_ROUTES.
+            - id: cameia-cuentas-auth
+              uri: ${CAMEIA_CUENTAS_URL}
+              predicates:
+                - Path=/api/v1/auth/**
+
+            - id: cameia-perfil
+              uri: ${CAMEIA_PERFIL_URL}
+              predicates:
+                - Path=/api/v1/profiles/**
+
+            - id: cameia-entrevista
+              # Sin valor por defecto hasta el 14-sep-2026: cameia-entrevista sigue bloqueada
+              # (puerto y GOOGLE_GENAI_API_KEY pendientes). Mismo patrón que voz/auditoría de
+              # abajo: cae a un host inexistente y responde 503 en vez de impedir que el
+              # Gateway arranque. Confirmado por Juan Vela (CM-153).
+              uri: ${CAMEIA_ENTREVISTA_URL:http://cameia-entrevista:8080}
+              predicates:
+                - Path=/api/v1/interviews/**
+
+            # Ruta pública — declarada en Sprint 1, operativa en Sprint 3 (C3 Cuentas)
+            - id: wompi-webhook
+              uri: ${CAMEIA_CUENTAS_URL}
+              predicates:
+                - Path=/webhooks/wompi
+                - Method=POST
+
+            # Sprint 2/3 — declaradas; 503 hasta que el servicio exista
+            - id: cameia-voz
+              uri: ${CAMEIA_VOZ_URL:http://cameia-voz:8080}
+              predicates:
+                - Path=/api/v1/voice-service/**
+
+            - id: cameia-auditoria
+              uri: ${CAMEIA_AUDITORIA_URL:http://cameia-auditoria:8080}
+              predicates:
+                - Path=/api/v1/audit/**
+
+          # ── CORS global ──────────────────────────────────────────────────
+          globalcors:
+            cors-configurations:
+              '[/**]':
+                # Sin guion de lista a propósito: Spring convierte un valor separado por comas en
+                # varios orígenes. Con un solo valor (el default de aquí) se comporta igual que antes.
+                allowedOrigins: ${GATEWAY_CORS_ALLOWED_ORIGIN:http://localhost:5173}
+                allowedMethods:
+                  - GET
+                  - POST
+                  - PUT
+                  - PATCH
+                  - DELETE
+                  - OPTIONS
+                allowedHeaders:
+                  - Authorization
+                  - Content-Type
+                  - X-Request-Id      # el cliente puede aportarlo (REQ-09)
+                  - Idempotency-Key   # clave de repetición que elige el cliente; no es una identidad
+                # Sin X-User-*: solo el Gateway las emite (REQ-NF-01)
+                allowCredentials: true
+                maxAge: 3600
+
+          # ── Timeout HTTP hacia downstream (REQ-NF-02) ────────────────────
+          httpclient:
+            response-timeout: ${GATEWAY_TIMEOUT_MS:30000}ms
+
+# ── Firma OIDC saliente (AGENTS.md §6.3, CM-104-correcciones-OIDC) ───────
+# La propiedad NO se llama gateway.oidc.enabled: con ese nombre GATEWAY_OIDC_ENABLED se enlazaría
+# directo a ella y podría apagar la firma en prod. Aquí la variable solo alimenta el placeholder, y
+# application-prod.yml lo fija en true literal (REQ-OIDC-07).
+gateway:
+  oidc:
+    signing-enabled: ${GATEWAY_OIDC_ENABLED:false}
+
+server:
+  # Cloud Run inyecta PORT; Docker Compose local usa SERVER_PORT. Mismo patrón que
+  # cameia-perfil (application.yml). CM-153.
+  port: ${PORT:${SERVER_PORT:8080}}
+
+# ── Actuator ──────────────────────────────────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: ${MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE:health,info}
+  endpoint:
+    health:
+      show-details: never
+
+# ── Logging ───────────────────────────────────────────────────────────────
+logging:
+  level:
+    root: ${LOG_LEVEL:INFO}
+    tech.cameia.gateway: DEBUG
+    org.springframework.cloud.gateway: INFO

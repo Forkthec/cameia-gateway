@@ -1,0 +1,5 @@
+{
+  "_comment": "Archivo de credenciales ficticio para tests. No contiene secretos reales. FirebaseConfig está desactivado en el perfil 'test' (gateway.firebase.enabled=false), por lo que este archivo nunca se lee en ejecución de tests.",
+  "type": "service_account",
+  "project_id": "test-project"
+}

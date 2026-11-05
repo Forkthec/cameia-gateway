@@ -3,6 +3,7 @@ gitignore
 build/
 target/
 out/
+firebase/
 
 .idea/
 *.iml
@@ -17,9 +18,8 @@ out/
 .env.*
 !.env.example
 
-application-local.yml
-application-local.yaml
-application-local.properties
-
 .DS_Store
 Thumbs.db
+
+# Cache de scripts Python locales (.github/scripts/pr_policy.py)
+__pycache__/

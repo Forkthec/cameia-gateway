@@ -1,0 +1,1344 @@
+{
+  "info": {
+    "name": "cameia-gateway → perfil",
+    "description": "Prueba de todos los endpoints de cameia-perfil enrutados a través del API Gateway (puerto 8080).\n\nRequisitos:\n1. docker network create cameia-net\n2. docker compose up -d  (en cameia-perfil)\n3. docker compose up -d  (en cameia-gateway, con .env configurado)\n\nVariables de entorno: importar 'cameia-gateway-perfil.postman_environment.json' y pegar el token Firebase en {{firebaseToken}}.\n\nFlujo recomendado:\n  1. POST Crear perfil  → copia el 'id' en {{profileId}}\n  2. Ejecuta el resto en cualquier orden\n  3. Al final ejecuta los DELETE para limpiar datos de prueba",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{firebaseToken}}", "type": "string" }
+    ]
+  },
+  "item": [
+    {
+      "name": "Perfil",
+      "item": [
+        {
+          "name": "01 · Crear perfil",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  var json = pm.response.json();",
+                  "  pm.collectionVariables.set('profileId', json.id);",
+                  "  pm.test('profileId guardado: ' + json.id, () => pm.expect(json.id).to.be.a('string'));",
+                  "}",
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/profiles",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "profiles"]
+            },
+            "description": "Crea un perfil nuevo para el usuario autenticado.\nEl gateway extrae el UID de Firebase e inyecta X-User-Id automáticamente.\nNo requiere body.\n\nEl script de Tests guarda el 'id' del perfil creado en la variable {{profileId}}."
+          }
+        },
+        {
+          "name": "02 · Obtener perfil",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Tiene id', () => pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get('profileId')));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/profiles/{{profileId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "profiles", "{{profileId}}"]
+            },
+            "description": "Retorna el perfil completo con todas sus sub-entidades."
+          }
+        },
+        {
+          "name": "03 · Actualizar info general",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('name actualizado', () => pm.expect(pm.response.json().name).to.eql('Sofia Test'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sofia Test\",\n  \"summary\": \"Desarrolladora Backend especializada en microservicios\",\n  \"preferredModality\": \"REMOTE\",\n  \"provenance\": \"MANUAL\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/profiles/{{profileId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "profiles", "{{profileId}}"]
+            },
+            "description": "Actualiza name, summary y preferredModality.\nValores válidos para preferredModality: REMOTE | HYBRID | ON_SITE"
+          }
+        },
+        {
+          "name": "08 · Actualizar expectativa salarial",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('salario guardado', () => pm.expect(pm.response.json().salaryExpectation).to.eql(3500000));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 3500000\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/profiles/{{profileId}}/salary-expectation",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "profiles", "{{profileId}}", "salary-expectation"]
+            }
+          }
+        },
+        {
+          "name": "10 · Enviar a revisión",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Status cambia a IN_REVIEW', () => pm.expect(pm.response.json().status).to.eql('IN_REVIEW'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/profiles/{{profileId}}/review-requests",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "profiles", "{{profileId}}", "review-requests"]
+            },
+            "description": "Marca el perfil como enviado a revisión humana.\nEl campo 'status' pasa de IN_PROGRESS → IN_REVIEW.\nNo requiere body."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Experiencia laboral",
+      "item": [
+        {
+          "name": "04 · Agregar experiencia laboral",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  var exps = pm.response.json().workExperiences;",
+                  "  if (exps && exps.length > 0) {",
+                  "    pm.collectionVariables.set('workExpId', exps[exps.length - 1].id);",
+                  "    pm.test('workExpId guardado', () => pm.expect(exps[exps.length-1].id).to.be.a('string'));",
+                  "  }",
+                  "}",
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"company\": \"TechCo S.A.S\",\n  \"position\": \"Backend Developer\",\n  \"description\": \"Desarrollo de APIs REST con Spring Boot\",\n  \"startDate\": \"2024-01\",\n  \"endDate\": null,\n  \"employmentStatus\": \"CURRENT\",\n  \"seniority\": \"SEMI_SENIOR\",\n  \"provenance\": \"MANUAL\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/profiles/{{profileId}}/work-experiences",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "profiles", "{{profileId}}", "work-experiences"]
+            },
+            "description": "Agrega una experiencia laboral al perfil.\n\nValores válidos:\n• employmentStatus: CURRENT | UNKNOWN_END | ENDED\n  - CURRENT → endDate debe ser null\n  - ENDED → endDate requerido\n• seniority: JUNIOR | SEMI_SENIOR | SENIOR | LEAD\n• startDate / endDate: formato YYYY-MM (ej. \"2024-01\")\n\nEl script guarda el id de la última experiencia en {{workExpId}}."
+          }
+        },
+        {
+          "name": "11 · Eliminar experiencia laboral",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('workExperiences vacío', () => {",
+                  "  var exps = pm.response.json().workExperiences;",
+                  "  pm.expect(exps.find(e => e.id === pm.collectionVariables.get('workExpId'))).to.be.undefined;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/profiles/{{profileId}}/work-experiences/{{workExpId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "profiles", "{{profileId}}", "work-experiences", "{{workExpId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Roles objetivo",
+      "item": [
+        {
+          "name": "05 · Agregar rol objetivo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  var roles = pm.response.json().targetRoles;",
+                  "  if (roles && roles.length > 0) {",
+                  "    pm.collectionVariables.set('targetRoleId', roles[roles.length - 1].id);",
+                  "    pm.test('targetRoleId guardado', () => pm.expect(roles[roles.length-1].id).to.be.a('string'));",
+                  "  }",
+                  "}",
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Software Engineer\",\n  \"seniority\": \"SENIOR\",\n  \"provenance\": \"MANUAL\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/profiles/{{profileId}}/target-roles",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "profiles", "{{profileId}}", "target-roles"]
+            },
+            "description": "Agrega un rol objetivo al perfil.\n\nValores válidos para seniority: JUNIOR | SEMI_SENIOR | SENIOR | LEAD\n\nEl script guarda el id del último rol en {{targetRoleId}}."
+          }
+        },
+        {
+          "name": "09 · Actualizar rol objetivo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Staff Engineer\",\n  \"seniority\": \"LEAD\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/profiles/{{profileId}}/target-roles/{{targetRoleId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "profiles", "{{profileId}}", "target-roles", "{{targetRoleId}}"]
+            }
+          }
+        },
+        {
+          "name": "12 · Eliminar rol objetivo (422 si es el último)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 o 422 esperado', () => {",
+                  "  pm.expect([200, 422]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code === 422) {",
+                  "  pm.test('Mensaje de negocio claro', () => {",
+                  "    pm.expect(pm.response.json().detail).to.include('último');",
+                  "  });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/profiles/{{profileId}}/target-roles/{{targetRoleId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "profiles", "{{profileId}}", "target-roles", "{{targetRoleId}}"]
+            },
+            "description": "Elimina un rol objetivo.\nRegla de negocio: si es el único rol del perfil responde 422 con mensaje explicativo.\nEl test acepta 200 y 422 como respuestas válidas."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Habilidades",
+      "item": [
+        {
+          "name": "06 · Agregar habilidad",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  var skills = pm.response.json().profileSkills;",
+                  "  if (skills && skills.length > 0) {",
+                  "    pm.collectionVariables.set('skillId', skills[skills.length - 1].id);",
+                  "    pm.test('skillId guardado', () => pm.expect(skills[skills.length-1].id).to.be.a('string'));",
+                  "  }",
+                  "}",
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"skillName\": \"Java\",\n  \"level\": \"ADVANCED\",\n  \"provenance\": \"MANUAL\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/profiles/{{profileId}}/skills",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "profiles", "{{profileId}}", "skills"]
+            },
+            "description": "Agrega una habilidad al perfil.\n\nValores válidos para level: BASIC | INTERMEDIATE | ADVANCED\n\nEl script guarda el id de la última habilidad en {{skillId}}."
+          }
+        },
+        {
+          "name": "13 · Eliminar habilidad",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/profiles/{{profileId}}/skills/{{skillId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "profiles", "{{profileId}}", "skills", "{{skillId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Educación",
+      "item": [
+        {
+          "name": "07 · Agregar educación",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  var eds = pm.response.json().educations;",
+                  "  if (eds && eds.length > 0) {",
+                  "    pm.collectionVariables.set('educationId', eds[eds.length - 1].id);",
+                  "    pm.test('educationId guardado', () => pm.expect(eds[eds.length-1].id).to.be.a('string'));",
+                  "  }",
+                  "}",
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"institution\": \"Universidad del Cauca\",\n  \"degree\": \"Ingeniería de Sistemas\",\n  \"fieldOfStudy\": \"Ingeniería\",\n  \"level\": \"UNDERGRADUATE\",\n  \"startDate\": \"2020-01\",\n  \"endDate\": null,\n  \"inProgress\": true,\n  \"provenance\": \"MANUAL\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/profiles/{{profileId}}/educations",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "profiles", "{{profileId}}", "educations"]
+            },
+            "description": "Agrega un registro de educación al perfil.\n\nValores válidos para level: TECHNICAL | UNDERGRADUATE | POSTGRADUATE\nFormato de fecha: YYYY-MM (ej. \"2020-01\")\nRegla: si inProgress es true, endDate debe ser null.\n\nEl script guarda el id del último registro en {{educationId}}."
+          }
+        },
+        {
+          "name": "14 · Eliminar educación",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/profiles/{{profileId}}/educations/{{educationId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "profiles", "{{profileId}}", "educations", "{{educationId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "🔒 Seguridad (sin token)",
+      "item": [
+        {
+          "name": "AUTH-01 · Sin token → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Rechaza sin token con 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Código AUTH_REQUIRED', () => {",
+                  "  var json = pm.response.json();",
+                  "  pm.expect(json.code || json.error || JSON.stringify(json)).to.include('AUTH');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/profiles/00000000-0000-0000-0000-000000000001",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "profiles", "00000000-0000-0000-0000-000000000001"]
+            },
+            "description": "Verifica que el gateway rechaza peticiones sin Authorization header.\nEspera 401 con código AUTH_REQUIRED del filtro Firebase."
+          }
+        },
+        {
+          "name": "AUTH-02 · Token inválido → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Rechaza token inválido con 401', () => pm.response.to.have.status(401));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "token-falso-invalido", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/profiles/00000000-0000-0000-0000-000000000001",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "profiles", "00000000-0000-0000-0000-000000000001"]
+            },
+            "description": "Verifica que el gateway rechaza tokens malformados.\nEspera 401 sin que la petición llegue a cameia-perfil."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Correo sin verificar (emulador)",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{idToken}}",
+            "type": "string"
+          }
+        ]
+      },
+      "description": "Requiere el compose del Gateway con su emulador de Firebase Auth (puerto 9099). Un usuario recién creado en el emulador nace con email_verified=false. Ejecutar en orden: V-00 guarda el idToken que usan las demás.",
+      "item": [
+        {
+          "name": "V-00 · alta en el emulador",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "var json = pm.response.json();",
+                  "pm.collectionVariables.set('idToken', json.idToken);",
+                  "pm.test('idToken guardado', () => pm.expect(json.idToken).to.be.a('string').and.not.empty);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{emulatorUrl}}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=fake-api-key",
+            "description": "Crea un usuario sintético en el emulador. Su token trae email_verified=false.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"prueba+{{$timestamp}}@ejemplo.test\",\"password\":\"Clave-Prueba-1234\",\"returnSecureToken\":true}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "V-01 · 403 en ruta privada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('Content-Type application/json con charset UTF-8', () => {",
+                  "  pm.expect(pm.response.headers.get('Content-Type').replace(/\\s/g, '').toLowerCase())",
+                  "    .to.eql('application/json;charset=utf-8');",
+                  "});",
+                  "pm.test('Cuerpo exacto', () => pm.expect(pm.response.text()).to.eql(\"{\\\"code\\\":\\\"EMAIL_NOT_VERIFIED\\\",\\\"message\\\":\\\"Tu correo aún no está verificado.\\\"}\"));",
+                  "pm.test('Trae X-Request-Id', () => pm.expect(pm.response.headers.has('X-Request-Id')).to.be.true);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/profiles/me",
+            "description": "Con el correo sin verificar el Gateway responde 403 sin reenviar la petición."
+          }
+        },
+        {
+          "name": "V-02 · la ruta de verificación no da 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('No es 403 ni 401: el Gateway la reenvió', () => {",
+                  "  pm.expect(pm.response.code).to.not.be.oneOf([401, 403]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/users/me/verification",
+            "description": "Única ruta exceptuada. Sin Cuentas levantado el Gateway responde 503 SERVICE_UNAVAILABLE, lo que prueba que reenvió."
+          }
+        },
+        {
+          "name": "V-03 · 401 sin token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Código AUTH_REQUIRED', () => pm.expect(pm.response.json().code).to.eql('AUTH_REQUIRED'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/profiles/me",
+            "description": "Sin Authorization sigue siendo 401, nunca 403.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Revocación de sesiones (local)",
+      "description": "Cierre de sesión en todos los dispositivos (POST /api/v1/auth/logout-all) con el emulador de Firebase Auth y Cuentas. Ejecutar en orden. Cómo correrla: 1) docker network create cameia-net (una vez). 2) En cameia-gateway (esta rama): .env con FIREBASE_PROJECT_ID=demo-cameia y FIREBASE_AUTH_EMULATOR_HOST=cameia-firebase-emulator:9099; docker compose up --build -d; el log debe mostrar «Permiso de lectura de usuarios de Firebase confirmado». 3) En cameia-cuentas (rama CM-291): .env con el mismo proyecto y FIREBASE_AUTH_EMULATOR_HOST=cameia-firebase-emulator:9099; docker compose up --build -d. 4) npx newman run docs/cameia-gateway-perfil.postman_collection.json --folder \"Revocación de sesiones (local)\" --reporters cli,junit --reporter-junit-export target/newman-revocacion.xml. 5) Al terminar: docker volume rm cameia-gateway_firebase-emulator-data para no dejar usuarios de prueba.",
+      "auth": {
+        "type": "noauth"
+      },
+      "item": [
+        {
+          "name": "G-00 · registro público de la cuenta",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.collectionVariables.set('logoutEmail', 'prueba+' + Date.now() + '-g@ejemplo.test');"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('logoutUid', pm.response.json().firebaseUid);",
+                  "pm.test('Responde en menos de 2 s', () => pm.expect(pm.response.responseTime).to.be.below(2000));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/users",
+            "description": "Crea la cuenta sintética por el Gateway (ruta pública) y guarda su uid.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Ana\",\n  \"lastName\": \"Pérez\",\n  \"birthDate\": \"12/04/1995\",\n  \"email\": \"{{logoutEmail}}\",\n  \"password\": \"frase secreta larga\",\n  \"pronoun\": \"SHE\"\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "G-01 · correo verificado en el emulador",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer owner"
+              }
+            ],
+            "url": "{{emulatorUrl}}/identitytoolkit.googleapis.com/v1/projects/{{firebaseProjectId}}/accounts:update",
+            "description": "Marca el correo como verificado en el emulador (el administrador del emulador usa Bearer owner).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"localId\":\"{{logoutUid}}\",\"emailVerified\":true}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "G-01b · ingreso y token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('logoutToken', pm.response.json().idToken);",
+                  "pm.test('idToken guardado', () => pm.expect(pm.collectionVariables.get('logoutToken')).to.be.a('string').and.not.empty);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{emulatorUrl}}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=fake-api-key",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"{{logoutEmail}}\",\"password\":\"frase secreta larga\",\"returnSecureToken\":true}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "G-02 · 200 con la sesión vigente (CA-1.8.12)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Responde en menos de 2 s', () => pm.expect(pm.response.responseTime).to.be.below(2000));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/users/me",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{logoutToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "G-03 · 401 sin token (CA-1.8.2)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Content-Type con charset UTF-8', () => pm.expect((pm.response.headers.get('Content-Type') || '').toLowerCase()).to.include('charset=utf-8'));",
+                  "pm.test('Código AUTH_REQUIRED', () => pm.expect(pm.response.json().code).to.eql('AUTH_REQUIRED'));",
+                  "pm.test('Mensaje', () => pm.expect(pm.response.json().message).to.eql('Token de acceso requerido'));",
+                  "pm.test('Responde en menos de 2 s', () => pm.expect(pm.response.responseTime).to.be.below(2000));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/auth/logout-all",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "G-05 · 204 cierra la sesión en todos los dispositivos (G-04 es su espera)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// G-04: Firebase compara segundos; se espera para que la revocación caiga después de la emisión del token",
+                  "setTimeout(() => {}, 1100);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));",
+                  "pm.test('Cuerpo vacío', () => pm.expect(pm.response.text()).to.eql(''));",
+                  "pm.test('Responde en menos de 2 s', () => pm.expect(pm.response.responseTime).to.be.below(2000));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/auth/logout-all",
+            "description": "CA-1.8.1 y CA-1.8.2: el Gateway verifica el token y reenvía a Cuentas con la identidad del token.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{logoutToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "G-06 · 401 con el mismo token (CA-1.8.9)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Content-Type con charset UTF-8', () => pm.expect((pm.response.headers.get('Content-Type') || '').toLowerCase()).to.include('charset=utf-8'));",
+                  "pm.test('Código AUTH_REQUIRED', () => pm.expect(pm.response.json().code).to.eql('AUTH_REQUIRED'));",
+                  "pm.test('Mensaje', () => pm.expect(pm.response.json().message).to.eql('Token de acceso inválido'));",
+                  "pm.test('Responde en menos de 2 s', () => pm.expect(pm.response.responseTime).to.be.below(2000));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/users/me",
+            "description": "El token anterior a la revocación deja de servir.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{logoutToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "G-07 · espera 1,1 s y nuevo ingreso",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "setTimeout(() => {}, 1100); // la sesión nueva debe emitirse en un segundo posterior a la revocación"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('logoutToken', pm.response.json().idToken);",
+                  "pm.test('idToken guardado', () => pm.expect(pm.collectionVariables.get('logoutToken')).to.be.a('string').and.not.empty);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{emulatorUrl}}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=fake-api-key",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"{{logoutEmail}}\",\"password\":\"frase secreta larga\",\"returnSecureToken\":true}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "G-07b · 200 con la sesión nueva",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Responde en menos de 2 s', () => pm.expect(pm.response.responseTime).to.be.below(2000));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/users/me",
+            "description": "Una sesión nueva después de cerrar todas funciona.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{logoutToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "G-08 · cuenta deshabilitada en el emulador",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer owner"
+              }
+            ],
+            "url": "{{emulatorUrl}}/identitytoolkit.googleapis.com/v1/projects/{{firebaseProjectId}}/accounts:update",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"localId\":\"{{logoutUid}}\",\"disableUser\":true}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "G-08b · 401 con la cuenta deshabilitada (CA-1.8.10)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Content-Type con charset UTF-8', () => pm.expect((pm.response.headers.get('Content-Type') || '').toLowerCase()).to.include('charset=utf-8'));",
+                  "pm.test('Código AUTH_REQUIRED', () => pm.expect(pm.response.json().code).to.eql('AUTH_REQUIRED'));",
+                  "pm.test('Mensaje', () => pm.expect(pm.response.json().message).to.eql('Token de acceso inválido'));",
+                  "pm.test('Responde en menos de 2 s', () => pm.expect(pm.response.responseTime).to.be.below(2000));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/users/me",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{logoutToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "G-09 · registro de la segunda cuenta",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.collectionVariables.set('deleteEmail', 'prueba+' + Date.now() + '-g@ejemplo.test');"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('deleteUid', pm.response.json().firebaseUid);",
+                  "pm.test('Responde en menos de 2 s', () => pm.expect(pm.response.responseTime).to.be.below(2000));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/users",
+            "description": "Segunda cuenta, que se eliminará.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Ana\",\n  \"lastName\": \"Pérez\",\n  \"birthDate\": \"12/04/1995\",\n  \"email\": \"{{deleteEmail}}\",\n  \"password\": \"frase secreta larga\",\n  \"pronoun\": \"SHE\"\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "G-09a · correo verificado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer owner"
+              }
+            ],
+            "url": "{{emulatorUrl}}/identitytoolkit.googleapis.com/v1/projects/{{firebaseProjectId}}/accounts:update",
+            "description": "Marca el correo como verificado en el emulador (el administrador del emulador usa Bearer owner).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"localId\":\"{{deleteUid}}\",\"emailVerified\":true}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "G-09b · ingreso y token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('deleteToken', pm.response.json().idToken);",
+                  "pm.test('idToken guardado', () => pm.expect(pm.collectionVariables.get('deleteToken')).to.be.a('string').and.not.empty);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{emulatorUrl}}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=fake-api-key",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"{{deleteEmail}}\",\"password\":\"frase secreta larga\",\"returnSecureToken\":true}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "G-09c · cuenta eliminada en el emulador",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer owner"
+              }
+            ],
+            "url": "{{emulatorUrl}}/identitytoolkit.googleapis.com/v1/projects/{{firebaseProjectId}}/accounts:delete",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"localId\":\"{{deleteUid}}\"}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "G-09d · 401 con la cuenta eliminada (CA-1.8.11)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Content-Type con charset UTF-8', () => pm.expect((pm.response.headers.get('Content-Type') || '').toLowerCase()).to.include('charset=utf-8'));",
+                  "pm.test('Código AUTH_REQUIRED', () => pm.expect(pm.response.json().code).to.eql('AUTH_REQUIRED'));",
+                  "pm.test('Mensaje', () => pm.expect(pm.response.json().message).to.eql('Token de acceso inválido'));",
+                  "pm.test('Responde en menos de 2 s', () => pm.expect(pm.response.responseTime).to.be.below(2000));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/users/me",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{deleteToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "G-10 · registro de la tercera cuenta (sin verificar)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.collectionVariables.set('unverifiedEmail', 'prueba+' + Date.now() + '-g@ejemplo.test');"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('unverifiedUid', pm.response.json().firebaseUid);",
+                  "pm.test('Responde en menos de 2 s', () => pm.expect(pm.response.responseTime).to.be.below(2000));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/users",
+            "description": "Tercera cuenta: no se verifica su correo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Ana\",\n  \"lastName\": \"Pérez\",\n  \"birthDate\": \"12/04/1995\",\n  \"email\": \"{{unverifiedEmail}}\",\n  \"password\": \"frase secreta larga\",\n  \"pronoun\": \"SHE\"\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "G-10a · ingreso y token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('unverifiedToken', pm.response.json().idToken);",
+                  "pm.test('idToken guardado', () => pm.expect(pm.collectionVariables.get('unverifiedToken')).to.be.a('string').and.not.empty);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{emulatorUrl}}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=fake-api-key",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"{{unverifiedEmail}}\",\"password\":\"frase secreta larga\",\"returnSecureToken\":true}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "G-10b · 403 con el correo sin verificar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('Content-Type con charset UTF-8', () => pm.expect((pm.response.headers.get('Content-Type') || '').toLowerCase()).to.include('charset=utf-8'));",
+                  "pm.test('Código EMAIL_NOT_VERIFIED', () => pm.expect(pm.response.json().code).to.eql('EMAIL_NOT_VERIFIED'));",
+                  "pm.test('Mensaje', () => pm.expect(pm.response.json().message).to.eql('Tu correo aún no está verificado.'));",
+                  "pm.test('Responde en menos de 2 s', () => pm.expect(pm.response.responseTime).to.be.below(2000));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/auth/logout-all",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{unverifiedToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl",      "value": "http://localhost:8080", "type": "string" },
+    { "key": "firebaseToken","value": "PEGA_TU_TOKEN_AQUI",   "type": "string" },
+    { "key": "profileId",    "value": "",                      "type": "string" },
+    { "key": "workExpId",    "value": "",                      "type": "string" },
+    { "key": "targetRoleId", "value": "",                      "type": "string" },
+    { "key": "skillId",      "value": "",                      "type": "string" },
+    { "key": "educationId",  "value": "",                      "type": "string" },
+    { "key": "emulatorUrl", "value": "http://localhost:9099", "type": "string" },
+    { "key": "idToken",      "value": "",                      "type": "string" },
+    { "key": "firebaseProjectId", "value": "demo-cameia",      "type": "string" },
+    { "key": "logoutEmail", "value": "", "type": "string" },
+    { "key": "logoutUid", "value": "", "type": "string" },
+    { "key": "logoutToken", "value": "", "type": "string" },
+    { "key": "deleteEmail", "value": "", "type": "string" },
+    { "key": "deleteUid", "value": "", "type": "string" },
+    { "key": "deleteToken", "value": "", "type": "string" },
+    { "key": "unverifiedEmail", "value": "", "type": "string" },
+    { "key": "unverifiedUid", "value": "", "type": "string" },
+    { "key": "unverifiedToken", "value": "", "type": "string" }
+  ]
+}

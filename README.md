@@ -2,7 +2,7 @@
 
 API Gateway de CAMEIA. Proporciona el punto de entrada controlado para la aplicación web y enruta solicitudes hacia los microservicios del MVP.
 
-> **Estado:** repositorio creado para el Sprint 1. La estructura y dependencias se implementan mediante [CM-104](https://f0rktech.atlassian.net/browse/CM-104); este README no demuestra que el Gateway ya esté operativo.
+> **Estado:** CM-104 implementado — base técnica operativa (Spring Cloud Gateway + Firebase auth + Docker). Ver `specs/CM-104-base-tecnica/` para el historial SDD.
 
 ## Alcance del Sprint 1
 
@@ -33,31 +33,66 @@ flowchart LR
     G -. verificación prevista .-> F[Firebase]
 ```
 
-## Tecnología prevista
+## Tecnología
 
-| Elemento | Línea base |
+| Elemento | Versión |
 |---|---|
 | Lenguaje | Java 21 |
-| Framework | Spring Boot 4.1.1 |
-| Build | Maven; wrapper pendiente de confirmar en CM-104 |
+| Framework | Spring Boot 4.1.1 / Spring Cloud Gateway (WebFlux) |
+| Auth | Firebase Admin SDK |
+| Build | Maven (sin instalación local requerida — usar Docker) |
 | Ejecución objetivo | Contenedor OCI en Cloud Run |
 
 ## Contratos y dependencias
 
-| Dependencia | Uso previsto | Estado |
+| Dependencia | Header propagado | Notas |
 |---|---|---|
-| `cameia-web` | Consumidor público del Gateway | Contrato pendiente |
-| Microservicios CAMEIA | Destinos internos de enrutamiento | Rutas pendientes |
-| Firebase Admin | Verificación de identidad/custom claims | Pendiente de implementación |
+| `cameia-web` | — | Consumidor; origen CORS configurable |
+| `cameia-cuentas` | `X-User-Id`, `X-User-Email`, `X-User-Roles`, `X-Request-Id`, `X-User-Plan` y `X-User-Email-Verified` | Sprint 1; también recibe `/webhooks/wompi` sin token de Firebase |
+| `cameia-perfil` | `X-User-Id`, `X-User-Email`, `X-User-Roles`, `X-Request-Id`, `X-User-Plan` y `X-User-Email-Verified` | Sprint 1 |
+| `cameia-entrevista` | `X-User-Id`, `X-User-Email`, `X-User-Roles`, `X-Request-Id`, `X-User-Plan` y `X-User-Email-Verified` | Sprint 1 |
+| `cameia-voz` | `X-User-Id`, `X-User-Email`, `X-User-Roles`, `X-Request-Id`, `X-User-Plan` y `X-User-Email-Verified` | Sprint 2 (ruta declarada) |
+| `cameia-auditoria` | `X-User-Id`, `X-User-Email`, `X-User-Roles`, `X-Request-Id`, `X-User-Plan` y `X-User-Email-Verified` | Sprint 2/3 (ruta declarada) |
+| Firebase Auth | — | Verifica ID Token; extrae uid y claim `plan` |
+
+El custom claim en Firebase se llama `plan` (string `"FREE"` | `"PREMIUM"`).
+Lo escribe cameia-cuentas al activar una suscripción.
 
 ## Ejecución local
 
-```text
-Instalación: pendiente de confirmar en CM-104
-Pruebas: pendiente de confirmar en CM-104
-Build: pendiente de confirmar en CM-104
-Inicio: pendiente de confirmar en CM-104
-Health check: pendiente de confirmar en CM-104
+**Requisitos:** Docker Desktop. Para usar `./mvnw.cmd` hace falta además JDK 21; con Docker no se necesita JDK ni Maven instalado.
+
+### 1. Configurar variables de entorno
+
+```bash
+cp .env.example .env
+# Editar .env con los valores reales (Firebase, URLs de servicios)
+```
+
+### 2. Verificar
+
+```bash
+./mvnw.cmd clean verify          # build, pruebas y cobertura
+docker compose run --rm verify   # pruebas sin instalar Java ni Maven
+```
+
+### 3. Construir la imagen
+
+```bash
+docker build -t cameia-gateway .
+```
+
+### 4. Arrancar en local
+
+```bash
+docker run --env-file .env -p 8080:8080 cameia-gateway
+```
+
+### 5. Verificar que está vivo
+
+```bash
+curl http://localhost:8080/actuator/health
+# Respuesta esperada: {"status":"UP"}
 ```
 
 ## Configuración y seguridad
@@ -75,12 +110,7 @@ Health check: pendiente de confirmar en CM-104
 
 ## Contribución
 
-- Rama estable: `main`.
-- Rama de integración: `develop`.
-- Ramas de trabajo: `<tipo>/CM-NNN-<descripcion-kebab-case>`.
-- Los cambios ordinarios se integran a `develop` mediante Pull Request.
-- La promoción a `main` utiliza un PR independiente.
-- El autor no puede ser la única aprobación.
+La rama, el commit, los tipos, el título del PR y la revisión están en [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Cuándo actualizar este README
 
