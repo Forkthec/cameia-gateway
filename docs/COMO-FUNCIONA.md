@@ -87,7 +87,7 @@ flowchart TD
 
     E --> I["cameia-perfil"]
     H --> I
-    I -->|No responde en 30 s| T["504 GATEWAY_TIMEOUT"]
+    I -->|No responde a tiempo| T["504 GATEWAY_TIMEOUT"]
     I -->|No acepta conexión| U["503 SERVICE_UNAVAILABLE"]
 
     style C fill:#ffe0e0
@@ -420,7 +420,7 @@ abierto como `GW-TBD-11`.
 | Control | Valor | Dónde |
 |---|---|---|
 | CORS | Un solo origen (`GATEWAY_CORS_ALLOWED_ORIGIN`), con credenciales, cacheado 1 h. Cabeceras admitidas: `Authorization`, `Content-Type`, `X-Request-Id`, `Idempotency-Key` | `globalcors` en el YAML |
-| Timeout al microservicio | 30 s (`GATEWAY_TIMEOUT_MS`); al agotarse, `504` | `httpclient.response-timeout` |
+| Timeout al microservicio | 30 s (`GATEWAY_TIMEOUT_MS`); en `/api/v1/interviews/**`, 120 s (`GATEWAY_INTERVIEWS_TIMEOUT_MS`); al agotarse, `504` | `httpclient.response-timeout` y `metadata.response-timeout` de la ruta de entrevistas |
 | `X-Request-Id` | Se conserva el del cliente o se genera uno. Llega al microservicio y vuelve al cliente con un único valor | `FirebaseAuthGlobalFilter` |
 | Formato de error | `{"code":"...","message":"..."}` desde un catálogo cerrado | `GlobalErrorHandler` |
 | Nivel del log del error | `5xx`: `ERROR` con traza. `404`: `INFO` sin traza. Otros `4xx`: `WARN` sin traza | `GlobalErrorHandler` (CM-184) |
